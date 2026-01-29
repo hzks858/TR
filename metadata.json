@@ -1,0 +1,8 @@
+{
+  "name": "G-Train 医药合规中心",
+  "description": "一个专为制药合规（GMP/21 CFR Part 11）设计的全面企业级学习管理系统（LMS）。具有管理员仪表板、培训矩阵、考核设计器和自动化审计追踪功能。",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

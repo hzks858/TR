@@ -18,7 +18,7 @@ const INITIAL_HIERARCHY_DATA: Record<string, HierarchyNode[]> = {
   ORGANIZATION: [
     { 
       id: 'C1', 
-      name: '金辉制药 (总仓)', 
+      name: '金辉制药 (集团总部)', 
       code: '01', 
       manager: '王利民', 
       address: '上海市张江高科技园区 A1 栋', 
@@ -26,49 +26,72 @@ const INITIAL_HIERARCHY_DATA: Record<string, HierarchyNode[]> = {
       children: [
         { 
           id: 'D1', 
-          name: '质量保证部 (QA)', 
+          name: '质量管理中心', 
           code: '0101', 
           manager: '张利民', 
           isGxP: true, 
           isOpen: true,
           children: [
-            { id: 'P1', name: '首席合规官', code: '010101', riskLevel: 'High', children: [] },
-            { id: 'P2', name: 'QA 经理', code: '010102', riskLevel: 'High', children: [] },
-            { id: 'P4', name: 'QA 审计员', code: '010103', riskLevel: 'Medium', children: [] }
+            { 
+              id: 'D1-1', 
+              name: '质量保证部 (QA)', 
+              code: '010101', 
+              manager: '李晓华', 
+              isOpen: true,
+              children: [
+                { id: 'P1', name: '首席合规官', code: '01010101', riskLevel: 'High', children: [] },
+                { id: 'P2', name: '合规经理', code: '01010102', riskLevel: 'High', children: [] },
+                { id: 'P4', name: '现场 QA 审计员', code: '01010103', riskLevel: 'Medium', children: [] }
+              ] 
+            },
+            { 
+              id: 'D1-2', 
+              name: '质量控制部 (QC)', 
+              code: '010102', 
+              manager: '陈思宇', 
+              children: [
+                { id: 'P6', name: '无菌室化验员', code: '01010201', riskLevel: 'High', children: [] },
+                { id: 'P7', name: '理化分析员', code: '01010202', riskLevel: 'Medium', children: [] }
+              ] 
+            }
           ] 
         },
         { 
           id: 'D2', 
-          name: '生产部 (L1)', 
+          name: '生产制造中心', 
           code: '0102', 
-          manager: '李晓华', 
+          manager: '赵生产', 
           isGxP: true, 
           isOpen: true,
           children: [
-            { id: 'P3', name: '车间主任', code: '010201', riskLevel: 'High', children: [] },
-            { id: 'P5', name: '灌装岗操作工', code: '010202', riskLevel: 'High', children: [] }
-          ] 
-        },
-        { 
-          id: 'D3', 
-          name: '质量控制部 (QC)', 
-          code: '0103', 
-          manager: '陈思宇', 
-          isGxP: true, 
-          children: [
-            { id: 'P6', name: '分析化验员', code: '010301', riskLevel: 'Medium', children: [] }
+            { id: 'P3', name: '灌装车间主任', code: '010201', riskLevel: 'High', children: [] },
+            { id: 'P5', name: '自动化岗操作工', code: '010202', riskLevel: 'High', children: [] }
           ] 
         }
       ]
+    },
+    {
+      id: 'C2',
+      name: '金辉制药 (北美研发中心)',
+      code: '02',
+      manager: 'Dr. Robert Chen',
+      address: 'Cambridge, MA, USA',
+      isOpen: false,
+      children: []
     }
   ],
   COURSE: [
-    { id: '4', name: 'L1: 通用合规体系', code: '10', children: [
-      { id: '5', name: 'L2: GMP 核心准则', code: '1001', children: [] }
+    { id: '4', name: 'L1: 全球法规准则 (GMP/FDA)', code: '10', children: [
+      { id: '5', name: 'L2: 药品生命周期合规', code: '1001', children: [] },
+      { id: '6', name: 'L2: 数据完整性核心', code: '1002', children: [] }
+    ]},
+    { id: '7', name: 'L1: 生产工艺规程 (SOP)', code: '20', children: [
+      { id: '8', name: 'L2: 洁净区行为规范', code: '2001', children: [] }
     ]}
   ],
   STUDENT: [
-    { id: '9', name: '在职正式员工', code: '20', children: [] }
+    { id: '9', name: '在职正式员工 (Full-time)', code: '30', children: [] },
+    { id: '10', name: '外部承包商/咨询专家', code: '40', children: [] }
   ]
 };
 
@@ -76,60 +99,66 @@ const INITIAL_COURSES: Course[] = [
   {
     id: 'c1',
     code: 'SOP-PRO-001',
-    name: '生产线灭菌操作规程',
-    version: 'v4.0',
+    name: '生产线自动灭菌系统操作规程',
+    version: 'v5.2',
     category: '生产 SOP',
     status: 'active',
-    lastUpdated: '2024-03-15',
-    questionCount: 10,
+    lastUpdated: '2024-03-20',
+    questionCount: 15,
     materials: [
-      { id: 'm1', name: '灭菌演示视频.mp4', type: 'video', url: '#', status: 'active', expiryDate: '2025-03-15', uploadDate: '2024-03-15', hours: 1.5 }
+      { id: 'm1', name: '灭菌系统 3D 演示.mp4', type: 'video', url: '#', status: 'active', expiryDate: '2025-03-15', uploadDate: '2024-03-15', hours: 2.0 }
     ],
-    totalHours: 1.5,
-    hierarchyIds: ['5']
+    totalHours: 2.0,
+    hierarchyIds: ['8']
   },
   {
     id: 'c2',
     code: 'QA-DI-102',
-    name: '电子记录与电子签名指南',
-    version: 'v1.2',
+    name: 'ALCOA+ 数据完整性深度解读',
+    version: 'v2.0',
     category: 'QA 合规',
     status: 'active',
-    lastUpdated: '2024-03-10',
-    questionCount: 5,
+    lastUpdated: '2024-03-18',
+    questionCount: 20,
     materials: [
-      { id: 'm2', name: '21 CFR Part 11 解读.pdf', type: 'pdf', url: '#', status: 'active', expiryDate: '2026-03-10', uploadDate: '2024-03-10', hours: 2.0 }
+      { id: 'm2', name: '21 CFR Part 11 指南.pdf', type: 'pdf', url: '#', status: 'active', expiryDate: '2026-03-10', uploadDate: '2024-03-10', hours: 3.5 }
     ],
-    totalHours: 2.0,
-    hierarchyIds: ['4']
+    totalHours: 3.5,
+    hierarchyIds: ['6']
+  },
+  {
+    id: 'c3',
+    code: 'QC-LAB-045',
+    name: '高效液相色谱仪 (HPLC) 维护手册',
+    version: 'v1.1',
+    category: '质量控制 (QC)',
+    status: 'active',
+    lastUpdated: '2024-03-10',
+    questionCount: 8,
+    materials: [],
+    totalHours: 1.0,
+    hierarchyIds: ['5']
   }
 ];
 
 const PRESET_ACCOUNTS: UserAccount[] = [
   { 
     id: 'u1', 
-    name: '王利民 (Admin)', 
+    name: '王利民 (集团 Admin)', 
     username: 'admin_wang', 
     password: 'password123', 
     employeeId: 'EMP-001', 
     role: Role.SYSTEM_ADMIN, 
-    company: '金辉制药 (总仓)', 
-    department: '系统管理部', 
+    company: '金辉制药 (集团总部)', 
+    department: '质量管理中心', 
     position: '首席合规官', 
     avatar: 'https://picsum.photos/seed/wang/80/80', 
     status: 'active', 
-    lastLogin: '2024-03-20 10:30',
-    workExperience: [
-      { company: '辉瑞制药 (Pfizer)', position: 'QA 总监', period: '2015 - 2021', description: '负责亚太区 GMP 合规审计。' },
-      { company: '阿斯利康', position: '质量经理', period: '2010 - 2015', description: '主导多次 FDA 现场核查。' }
-    ],
-    transferRecords: [
-      { date: '2022-03-15', fromDept: '外部引进', toDept: '系统管理部', fromPos: 'N/A', toPos: '首席合规官', reason: '人才战略引进', approver: '集团董事会' }
-    ]
+    lastLogin: '2024-03-21 10:30',
   },
-  { id: 'u2', name: '张利民 (QA)', username: 'qa_zhang', password: 'password123', employeeId: 'EMP-102', role: Role.QA_OFFICER, company: '金辉制药 (总仓)', department: '质量保证部 (QA)', position: 'QA 经理', avatar: 'https://picsum.photos/seed/zhang/80/80', status: 'active', lastLogin: '2024-03-20 09:15' },
-  { id: 'u3', name: '陈思宇 (QC)', username: 'qc_chen', password: 'password123', employeeId: 'EMP-305', role: Role.EMPLOYEE, company: '金辉制药 (总仓)', department: '质量控制部 (QC)', position: '分析化验员', avatar: 'https://picsum.photos/seed/chen/80/80', status: 'active', lastLogin: '2024-03-19 14:20' },
-  { id: 'u4', name: '李晓华 (Pro)', username: 'pro_li', password: 'password123', employeeId: 'EMP-208', role: Role.EMPLOYEE, company: '金辉制药 (总仓)', department: '生产部 (L1)', position: '车间主任', avatar: 'https://picsum.photos/seed/li/80/80', status: 'active', lastLogin: '2024-03-18 11:00' },
+  { id: 'u2', name: '张利民 (审计员)', username: 'qa_zhang', password: 'password123', employeeId: 'EMP-102', role: Role.QA_OFFICER, company: '金辉制药 (集团总部)', department: '质量保证部 (QA)', position: '合规经理', avatar: 'https://picsum.photos/seed/zhang/80/80', status: 'active', lastLogin: '2024-03-21 09:15' },
+  { id: 'u3', name: '陈思宇 (实验主管)', username: 'qc_chen', password: 'password123', employeeId: 'EMP-305', role: Role.EMPLOYEE, company: '金辉制药 (集团总部)', department: '质量控制部 (QC)', position: '无菌室化验员', avatar: 'https://picsum.photos/seed/chen/80/80', status: 'active', lastLogin: '2024-03-20 14:20' },
+  { id: 'u4', name: '李晓华 (高级操作工)', username: 'pro_li', password: 'password123', employeeId: 'EMP-208', role: Role.EMPLOYEE, company: '金辉制药 (集团总部)', department: '生产制造中心', position: '灌装车间主任', avatar: 'https://picsum.photos/seed/li/80/80', status: 'active', lastLogin: '2024-03-19 11:00' },
 ];
 
 const INITIAL_PLANS: PlanItem[] = [
@@ -139,17 +168,17 @@ const INITIAL_PLANS: PlanItem[] = [
     targetDepartmentIds: [], 
     targetPositionIds: [],
     courseIds: ['c1', 'c2'],
-    courseProgress: { 'c1': 30, 'c2': 60 },
+    courseProgress: { 'c1': 80, 'c2': 40 },
     trainingTypes: ['ONLINE', 'SELF'],
-    year: 2026,
+    year: 2024,
     month: 3, 
-    title: 'Q1 合规意识全员大考核', 
-    code: 'TR-2026-Q1', 
-    targetDescription: '金辉制药全员', 
+    title: 'Q1 集团合规意识全员月度考核', 
+    code: 'PLAN-2024-Q1-01', 
+    targetDescription: '金辉制药集团全员', 
     level: 'COMPANY', 
     status: 'in-progress', 
-    owner: '集团 QA 总监', 
-    progress: 45,
+    owner: '王利民', 
+    progress: 60,
     priority: 'HIGH'
   }
 ];
@@ -188,7 +217,7 @@ const App: React.FC = () => {
         { id: View.ADMIN_DASHBOARD, label: '概览仪表板', icon: 'dashboard', roles: [Role.SYSTEM_ADMIN, Role.QA_OFFICER] },
         { id: View.USER_MANAGEMENT, label: '学员管理', icon: 'manage_accounts', roles: [Role.SYSTEM_ADMIN, Role.QA_OFFICER] },
         { id: View.COURSE_CONTAINER, label: '课程目录', icon: 'library_books', roles: [Role.SYSTEM_ADMIN, Role.QA_OFFICER] },
-        { id: View.ANNUAL_PLAN, label: '年度培训计划', icon: 'calendar_today', roles: [Role.SYSTEM_ADMIN, Role.QA_OFFICER] },
+        { id: View.ANNUAL_PLAN, label: '培训计划', icon: 'calendar_today', roles: [Role.SYSTEM_ADMIN, Role.QA_OFFICER] },
         { id: View.USER_TRAINING, label: '我的学习', icon: 'school', roles: [Role.SYSTEM_ADMIN, Role.QA_OFFICER, Role.EMPLOYEE] },
         { id: View.TRAINING_ARCHIVE, label: '培训档案', icon: 'history', roles: [Role.SYSTEM_ADMIN, Role.QA_OFFICER, Role.EMPLOYEE] },
       ]
@@ -207,35 +236,41 @@ const App: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-[#f6f6f8]">
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#dbdfe6] transition-transform duration-300 transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
-        <div className="flex flex-col h-full p-6">
-          <div className="flex items-center gap-3 mb-10">
-            <div className="bg-[#135bec] size-10 rounded-lg flex items-center justify-center text-white shadow-lg">
-              <span className="material-symbols-outlined">pill</span>
+      <aside 
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#dbdfe6] transition-all duration-500 cubic-bezier(0.4, 0, 0.2, 1) transform ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } lg:translate-x-0 overflow-hidden shadow-2xl lg:shadow-none`}
+      >
+        <div className="flex flex-col h-full p-6 w-64">
+          <div className="flex items-center gap-3 mb-10 shrink-0">
+            <div className="bg-[#135bec] size-10 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-500/30">
+              <span className="material-symbols-outlined font-bold">pill</span>
             </div>
             <div>
-              <h1 className="text-[#111318] text-base font-bold leading-none">G-Train</h1>
-              <p className="text-[#616f89] text-xs mt-1 font-medium">医药合规管理系统</p>
+              <h1 className="text-[#111318] text-base font-black leading-none">G-Train</h1>
+              <p className="text-[#616f89] text-[10px] mt-1 font-black uppercase tracking-widest">Compliance Center</p>
             </div>
           </div>
           
-          <nav className="flex-1 space-y-8 overflow-y-auto custom-scrollbar">
+          <nav className="flex-1 space-y-8 overflow-y-auto custom-scrollbar no-scrollbar">
             {menuSections.map((section, sIdx) => {
               const visibleItems = section.items.filter(item => item.roles.includes(currentUser.role));
               if (visibleItems.length === 0) return null;
               return (
                 <div key={sIdx} className="space-y-2">
-                  <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-3">{section.title}</p>
+                  <p className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] px-3">{section.title}</p>
                   <div className="space-y-1">
                     {visibleItems.map((item) => (
                       <button
                         key={item.id}
                         onClick={() => navigateTo(item.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors font-medium text-sm ${
-                          currentView === item.id ? 'bg-[#135bec]/10 text-[#135bec]' : 'text-[#616f89] hover:bg-gray-50'
+                        className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-300 font-bold text-sm ${
+                          currentView === item.id 
+                            ? 'bg-[#135bec]/10 text-[#135bec] translate-x-1 shadow-sm' 
+                            : 'text-[#616f89] hover:bg-gray-50 hover:translate-x-1'
                         }`}
                       >
-                        <span className="material-symbols-outlined" style={{ fontVariationSettings: currentView === item.id ? "'FILL' 1" : "" }}>
+                        <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: currentView === item.id ? "'FILL' 1" : "" }}>
                           {item.icon}
                         </span>
                         {item.label}
@@ -247,35 +282,40 @@ const App: React.FC = () => {
             })}
           </nav>
 
-          <div className="pt-6 mt-6 border-t border-gray-100">
-            <button onClick={() => navigateTo(View.USER_PROFILE)} className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 rounded-xl transition-all">
-               <img src={currentUser.avatar} className="size-9 rounded-full border border-gray-200" />
+          <div className="pt-6 mt-6 border-t border-gray-100 shrink-0">
+            <button onClick={() => navigateTo(View.USER_PROFILE)} className="w-full flex items-center gap-3 p-3 hover:bg-gray-50 rounded-2xl transition-all group">
+               <img src={currentUser.avatar} className="size-9 rounded-xl border border-gray-200 group-hover:scale-110 transition-transform shadow-sm object-cover" />
                <div className="text-left">
-                  <p className="text-xs font-bold text-[#111318] truncate w-32">{currentUser.name}</p>
-                  <p className="text-[10px] text-gray-400">个人设置</p>
+                  <p className="text-xs font-black text-[#111318] truncate w-32">{currentUser.name}</p>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">My Settings</p>
                </div>
             </button>
           </div>
         </div>
       </aside>
 
-      <div className={`flex-1 ${isSidebarOpen ? 'lg:ml-64' : ''} flex flex-col min-h-screen`}>
-        <header className="h-16 bg-white border-b border-[#dbdfe6] sticky top-0 z-40 px-8 flex items-center justify-between">
+      <div className={`flex-1 transition-all duration-500 cubic-bezier(0.4, 0, 0.2, 1) ${isSidebarOpen ? 'lg:ml-64' : 'lg:ml-0'} flex flex-col min-h-screen`}>
+        <header className="h-16 bg-white border-b border-[#dbdfe6] sticky top-0 z-40 px-8 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-6">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="lg:hidden p-2 text-gray-400">
-              <span className="material-symbols-outlined">menu</span>
+            <button 
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
+              className="p-2 text-gray-400 hover:text-[#135bec] hover:bg-gray-50 rounded-lg transition-all"
+            >
+              <span className={`material-symbols-outlined transition-transform duration-500 ${!isSidebarOpen ? 'rotate-180' : ''}`}>
+                menu_open
+              </span>
             </button>
-            <h2 className="text-lg font-bold text-[#111318]">
+            <h2 className="text-lg font-black text-[#111318] animate-in slide-in-from-left-4 duration-500">
               {menuSections.flatMap(s => s.items).find(i => i.id === currentView)?.label}
             </h2>
           </div>
           <div className="flex items-center gap-4">
-             <div className="flex items-center gap-2 px-3 py-1 bg-[#135bec]/5 text-[#135bec] rounded-full border border-[#135bec]/10">
-                <span className="text-[10px] font-bold uppercase tracking-wider">合规环境: 激活</span>
+             <div className="flex items-center gap-2 px-3 py-1.5 bg-green-50 text-green-600 rounded-full border border-green-100">
+                <span className="text-[10px] font-black uppercase tracking-wider">合规环境: 验证已激活 (GAMP 5)</span>
              </div>
           </div>
         </header>
-        <main className="p-8 flex-1">
+        <main className="p-8 flex-1 overflow-x-hidden">
           {currentView === View.ADMIN_DASHBOARD && <AdminDashboard />}
           {currentView === View.USER_MANAGEMENT && <UserManagement users={users} setUsers={setUsers} />}
           {currentView === View.SYSTEM_MANAGEMENT && <SystemManagement />}

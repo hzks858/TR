@@ -19,7 +19,39 @@ const HierarchyManager: React.FC<Props> = ({ data, setData }) => {
   const [targetNode, setTargetNode] = useState<HierarchyNode | null>(null);
   const [newName, setNewName] = useState('');
 
-  // 核心逻辑：删除节点（递归）
+  // 核心逻辑：全局切换所有节点展开/折叠状态
+  const toggleAllNodes = (isOpen: boolean) => {
+    const processRecursive = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      return nodes.map(node => ({
+        ...node,
+        isOpen: isOpen,
+        children: node.children ? processRecursive(node.children) : []
+      }));
+    };
+
+    const newData = processRecursive(data[activeDomain]);
+    setData(prev => ({ ...prev, [activeDomain]: newData }));
+  };
+
+  // 核心逻辑：切换单个节点展开/折叠状态
+  const toggleNodeOpen = (nodeId: string) => {
+    const toggleRecursive = (nodes: HierarchyNode[]): HierarchyNode[] => {
+      return nodes.map(node => {
+        if (node.id === nodeId) {
+          return { ...node, isOpen: !node.isOpen };
+        }
+        if (node.children && node.children.length > 0) {
+          return { ...node, children: toggleRecursive(node.children) };
+        }
+        return node;
+      });
+    };
+
+    const newData = toggleRecursive(data[activeDomain]);
+    setData(prev => ({ ...prev, [activeDomain]: newData }));
+  };
+
+  // 删除节点逻辑
   const handleConfirmDelete = useCallback((nodeToDelete: HierarchyNode) => {
     const isOrg = activeDomain === 'ORGANIZATION';
     const message = isOrg 
@@ -92,7 +124,7 @@ const HierarchyManager: React.FC<Props> = ({ data, setData }) => {
         code: '',
         children: [],
         isOpen: true,
-        isGxP: true // 默认值
+        isGxP: true
       };
       if (modalMode === 'SIBLING') {
         if (!targetNode) {
@@ -124,6 +156,7 @@ const HierarchyManager: React.FC<Props> = ({ data, setData }) => {
               if (!code) return false;
               newNode.code = code;
               node.children.push(newNode);
+              node.isOpen = true;
               return true;
             }
             if (findAndAddChild(node.children)) return true;
@@ -149,6 +182,9 @@ const HierarchyManager: React.FC<Props> = ({ data, setData }) => {
   const renderTree = (nodes: HierarchyNode[], level: number = 0) => {
     return nodes.map(node => {
       const isSelected = selectedNodeId === node.id;
+      const hasChildren = node.children && node.children.length > 0;
+      const isOpen = node.isOpen !== false;
+
       return (
         <div key={node.id} className="group">
           <div 
@@ -160,40 +196,43 @@ const HierarchyManager: React.FC<Props> = ({ data, setData }) => {
             }`}
           >
             <div className="flex items-center" style={{ marginLeft: `${level * 40}px` }}>
-              <div className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black mr-3 shadow-sm ${
+              <div className="w-6 shrink-0 flex items-center justify-center">
+                {hasChildren && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); toggleNodeOpen(node.id); }}
+                    className="size-6 flex items-center justify-center text-gray-400 hover:text-[#135bec] hover:bg-white rounded transition-all"
+                  >
+                    <span className={`material-symbols-outlined text-lg transition-transform duration-300 ${isOpen ? 'rotate-90' : ''}`}>
+                      chevron_right
+                    </span>
+                  </button>
+                )}
+              </div>
+
+              <div className={`w-6 h-6 rounded flex items-center justify-center text-[10px] font-black mr-3 shadow-sm shrink-0 ${
                 level === 0 ? 'bg-[#135bec] text-white' : 
                 level === 1 ? 'bg-purple-500 text-white' : 
                 'bg-emerald-500 text-white'
               }`}>
                 L{level + 1}
               </div>
-              <div className="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-500 mr-4 border border-gray-200">
+              <div className="font-mono text-xs bg-gray-100 px-2 py-1 rounded text-gray-500 mr-4 border border-gray-200 shrink-0">
                 {node.code}
               </div>
-              <div className={`text-sm font-bold ${level === 0 ? 'text-[#111318]' : 'text-gray-600'}`}>{node.name}</div>
+              <div className={`text-sm font-black truncate max-w-[200px] ${level === 0 ? 'text-[#111318]' : 'text-gray-600'}`}>
+                {node.name}
+              </div>
             </div>
 
             <div className={`flex gap-1 ml-auto transition-opacity ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setModalMode('SIBLING'); setTargetNode(node); setNewName(''); setIsModalOpen(true); }}
-                className="px-2 py-1 text-[9px] font-black text-[#135bec] hover:bg-blue-50 rounded uppercase transition-colors"
-              >+ 同级</button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setModalMode('CHILD'); setTargetNode(node); setNewName(''); setIsModalOpen(true); }}
-                className="px-2 py-1 text-[9px] font-black text-emerald-600 hover:bg-emerald-50 rounded uppercase transition-colors"
-              >+ 下级</button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); openEditModal(node); }}
-                className="px-2 py-1 text-[9px] font-black text-amber-600 hover:bg-amber-50 rounded uppercase transition-colors"
-              >编辑</button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); handleConfirmDelete(node); }}
-                className="px-2 py-1 text-[9px] font-black text-red-400 hover:bg-red-50 rounded uppercase transition-colors"
-              >删除</button>
+              <button onClick={(e) => { e.stopPropagation(); setModalMode('SIBLING'); setTargetNode(node); setNewName(''); setIsModalOpen(true); }} className="px-2 py-1 text-[9px] font-black text-[#135bec] hover:bg-blue-50 rounded uppercase transition-colors">+ 同级</button>
+              <button onClick={(e) => { e.stopPropagation(); setModalMode('CHILD'); setTargetNode(node); setNewName(''); setIsModalOpen(true); }} className="px-2 py-1 text-[9px] font-black text-emerald-600 hover:bg-emerald-50 rounded uppercase transition-colors">+ 下级</button>
+              <button onClick={(e) => { e.stopPropagation(); openEditModal(node); }} className="px-2 py-1 text-[9px] font-black text-amber-600 hover:bg-amber-50 rounded uppercase transition-colors">编辑</button>
+              <button onClick={(e) => { e.stopPropagation(); handleConfirmDelete(node); }} className="px-2 py-1 text-[9px] font-black text-red-400 hover:bg-red-50 rounded uppercase transition-colors">删除</button>
             </div>
           </div>
-          {node.children && node.children.length > 0 && (
-            <div className="border-l-2 border-dashed border-gray-100 ml-6">
+          {hasChildren && isOpen && (
+            <div className="border-l-2 border-dashed border-gray-100 ml-12">
               {renderTree(node.children, level + 1)}
             </div>
           )}
@@ -248,6 +287,31 @@ const HierarchyManager: React.FC<Props> = ({ data, setData }) => {
              <h3 className="text-sm font-black text-[#111318] uppercase tracking-widest">
                {activeDomain === 'ORGANIZATION' ? '机构组织' : activeDomain === 'COURSE' ? '合规课程' : '学员档案'} 可视化视图
              </h3>
+             <div className="flex items-center gap-3">
+                {/* 新增的折叠/展开全局按键 */}
+                <div className="flex bg-gray-50 border border-gray-100 rounded-lg p-1">
+                   <button 
+                    onClick={() => toggleAllNodes(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black text-[#135bec] hover:bg-white hover:shadow-sm rounded-md transition-all uppercase tracking-tighter"
+                   >
+                     <span className="material-symbols-outlined text-sm">unfold_more</span>
+                     全部展开
+                   </button>
+                   <div className="w-px h-4 bg-gray-200 my-auto"></div>
+                   <button 
+                    onClick={() => toggleAllNodes(false)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black text-gray-400 hover:bg-white hover:text-red-500 hover:shadow-sm rounded-md transition-all uppercase tracking-tighter"
+                   >
+                     <span className="material-symbols-outlined text-sm">unfold_less</span>
+                     全部收起
+                   </button>
+                </div>
+                <div className="w-px h-6 bg-gray-100 mx-1"></div>
+                <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                   <span className="material-symbols-outlined text-sm">info</span>
+                   快捷键: [Del] 删除选中项
+                </div>
+             </div>
           </div>
           <div className="space-y-1">
             {renderTree(data[activeDomain])}

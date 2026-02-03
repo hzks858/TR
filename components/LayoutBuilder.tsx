@@ -277,17 +277,19 @@ const LayoutBuilder: React.FC = () => {
                        key === 'level' ? '标题级别' : 
                        key === 'size' ? '尺寸' : key}
                     </label>
+                    {/* Fixed: Casting value to any/string to prevent 'unknown' assignment error */}
                     {typeof value === 'string' && key !== 'variant' && key !== 'color' && (
                       <input
                         type="text"
-                        value={value}
+                        value={value as string}
                         onChange={(e) => updateProp(selectedComp.id, key, e.target.value)}
                         className="w-full bg-[#f3f4f6] border-none rounded-lg p-2.5 text-xs font-bold focus:ring-2 focus:ring-[#135bec]"
                       />
                     )}
+                    {/* Fixed: Casting value to any/string to prevent 'unknown' assignment error */}
                     {key === 'variant' && (
                       <select 
-                        value={value}
+                        value={value as string}
                         onChange={(e) => updateProp(selectedComp.id, key, e.target.value)}
                         className="w-full bg-[#f3f4f6] border-none rounded-lg p-2.5 text-xs font-bold"
                       >
@@ -295,9 +297,10 @@ const LayoutBuilder: React.FC = () => {
                         <option value="outline">线框样式</option>
                       </select>
                     )}
+                    {/* Fixed: Casting value to any/string to prevent 'unknown' assignment error */}
                     {key === 'color' && (
                       <select 
-                        value={value}
+                        value={value as string}
                         onChange={(e) => updateProp(selectedComp.id, key, e.target.value)}
                         className="w-full bg-[#f3f4f6] border-none rounded-lg p-2.5 text-xs font-bold"
                       >

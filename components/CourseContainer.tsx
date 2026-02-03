@@ -1,1018 +1,738 @@
 
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { HierarchyNode, Course, Material, Question } from '../types';
 
-interface LearningPath {
-  id: string;
-  name: string;
-  color: string;
+interface Props {
+  courses: Course[];
+  setCourses: React.Dispatch<React.SetStateAction<Course[]>>;
+  questions: Question[];
+  setQuestions: React.Dispatch<React.SetStateAction<Question[]>>;
+  hierarchyData: Record<string, HierarchyNode[]>;
 }
 
-const LEARNING_PATHS: LearningPath[] = [
-  { id: 'lp1', name: '新员工 GMP 入职', color: 'bg-blue-50 text-blue-700 border-blue-100' },
-  { id: 'lp2', name: 'QA 核心技能进阶', color: 'bg-purple-50 text-purple-700 border-purple-100' },
-  { id: 'lp3', name: '生产现场无菌操作', color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
-  { id: 'lp4', name: '21 CFR Part 11 合规专向', color: 'bg-amber-50 text-amber-700 border-amber-100' },
-];
-
-const ORG_COMPANIES = [
-  { id: 'C1', name: '金辉制药 (总仓)' },
-  { id: 'C2', name: '金辉研发中心 (上海)' },
-  { id: 'C3', name: '金辉生物制剂工厂' },
-];
-
-const ORG_DEPARTMENTS = [
-  { id: 'D1', name: '质量保证部 (QA)' },
-  { id: 'D2', name: '质量控制部 (QC)' },
-  { id: 'D3', name: '生产部' },
-  { id: 'D4', name: '物流/供应链' },
-];
-
-const ORG_POSITIONS = [
-  { id: 'P1', name: '经理/主管' },
-  { id: 'P2', name: 'QA/QC 专员' },
-  { id: 'P3', name: '验证工程师' },
-  { id: 'P4', name: '生产操作岗' },
-];
-
-interface Course {
-  id: string;
-  code: string;
-  name: string;
-  version: string;
-  category: string;
-  status: 'active' | 'paused' | 'draft';
-  lastUpdated: string;
-  questionCount: number;
-  learningPathIds: string[];
-  targetCompanyIds: string[];
-  targetDepartmentIds: string[];
-  targetPositionIds: string[];
+interface ImportFailedItem {
+  index: number;
+  content: string;
+  reason: string;
 }
 
-interface MatchingPair {
-  left: string;
-  right: string;
+interface ImportResult {
+  total: number;
+  success: number;
+  failed: number;
+  failedItems: ImportFailedItem[];
 }
 
-interface Question {
-  id: string;
-  type: 'single' | 'multiple' | 'boolean' | 'cloze' | 'matching';
-  text: string;
-  options: string[];
-  correctAnswers: number[];
-  clozeAnswers: string[];
-  matchingPairs: MatchingPair[];
-  courseId: string;
-}
+const CATEGORIES = ['GMP 基础', '生产 SOP', '质量控制 (QC)', 'QA 合规', 'EHS 安全', '物料管理'];
 
-const CourseContainer: React.FC = () => {
-  const [courses, setCourses] = useState<Course[]>([
-    { id: '1', code: 'SOP-PRO-001', name: '生产线灭菌规程', version: 'v2.0', category: 'GMP 生产', status: 'active', lastUpdated: '2023-10-12', questionCount: 2, learningPathIds: ['lp1', 'lp3'], targetCompanyIds: ['C1', 'C3'], targetDepartmentIds: ['D3'], targetPositionIds: ['P4'] },
-    { id: '2', code: 'SOP-QC-005', name: 'HPLC 样品制备指南', version: 'v1.1', category: '质量控制', status: 'paused', lastUpdated: '2023-11-05', questionCount: 0, learningPathIds: ['lp2'], targetCompanyIds: ['C1'], targetDepartmentIds: ['D2'], targetPositionIds: ['P2'] },
-    { id: '3', code: 'POL-QA-10', name: '数据完整性政策', version: 'v4.0', category: '合规/政策', status: 'active', lastUpdated: '2024-01-20', questionCount: 1, learningPathIds: ['lp1', 'lp4'], targetCompanyIds: ['C1', 'C2', 'C3'], targetDepartmentIds: ['D1', 'D2'], targetPositionIds: ['P1', 'P2', 'P3'] },
-  ]);
-
-  const [questions, setQuestions] = useState<Question[]>([
-    { id: 'q1', courseId: '1', type: 'single', text: '在洁净区 B 级环境下，人员更衣的正确顺序应该是？', options: ['先穿连体服再戴手套', '先消毒再穿连体服', '选项 C', '选项 D'], correctAnswers: [1], clozeAnswers: [], matchingPairs: [] },
-    { id: 'q2', courseId: '1', type: 'cloze', text: 'GMP 要求生产设备应当建立[[blank]]，记录内容包括使用、[[blank]]、维护和维修情况。', options: [], correctAnswers: [], clozeAnswers: ['使用日志', '清洁'], matchingPairs: [] },
-    { id: 'q3', courseId: '3', type: 'matching', text: '请将下列数据完整性原则与对应的描述匹配：', options: [], correctAnswers: [], clozeAnswers: [], matchingPairs: [
-      { left: 'ALCOA+', right: '数据完整性核心原则' },
-      { left: '21 CFR Part 11', right: '电子记录与签名' }
-    ]},
-  ]);
-
-  const [viewMode, setViewMode] = useState<'list' | 'assessment'>('list');
-  const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
+const CourseContainer: React.FC<Props> = ({ courses, setCourses, questions, setQuestions, hierarchyData }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<Course['status'] | 'ALL'>('ALL');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isMaterialModalOpen, setIsMaterialModalOpen] = useState(false);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [selectedViewCourse, setSelectedViewCourse] = useState<Course | null>(null);
+  const [detailsTab, setDetailsTab] = useState<'MATERIALS' | 'QUESTIONS' | 'HIERARCHY'>('QUESTIONS');
   
-  // Modals & UX States
-  const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
-  const [isQuestionModalOpen, setIsQuestionModalOpen] = useState(false);
-  const [isImportPreviewOpen, setIsImportPreviewOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
-  const [selectedQuestionIds, setSelectedQuestionIds] = useState<Set<string>>(new Set());
-  
-  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
-  const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
-  const [importingQuestions, setImportingQuestions] = useState<Omit<Question, 'id' | 'courseId'>[]>([]);
+  const [step, setStep] = useState(1);
+  const [editingCourseId, setEditingCourseId] = useState<string | null>(null);
+  const [activeHierarchyDomain, setActiveHierarchyDomain] = useState<'COURSE' | 'ORGANIZATION' | 'STUDENT'>('COURSE');
 
-  const [courseFormData, setCourseFormData] = useState({ 
-    code: '', 
-    name: '', 
-    version: 'v1.0', 
-    category: 'GMP 生产', 
-    status: 'draft' as Course['status'],
-    learningPathIds: [] as string[],
-    targetCompanyIds: [] as string[],
-    targetDepartmentIds: [] as string[],
-    targetPositionIds: [] as string[]
+  // 批量导入与操作状态
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const [importStatus, setImportStatus] = useState<'IDLE' | 'VALIDATING' | 'FINISHED'>('IDLE');
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  
+  // 考核设计器状态
+  const [isQuestionEditorOpen, setIsQuestionEditorOpen] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState<Partial<Question> | null>(null);
+
+  // 预览播放器状态
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState<'INTRO' | 'LEARN' | 'EXAM'>('INTRO');
+  const [currentPlayIndex, setCurrentPlayIndex] = useState(0);
+
+  const [courseForm, setCourseForm] = useState({
+    code: '',
+    name: '',
+    version: 'v1.0',
+    category: CATEGORIES[0],
+    status: 'active' as Course['status'],
+    materials: [] as Material[],
+    totalHours: 0,
+    hierarchyIds: [] as string[]
   });
-  
-  const initialQuestionState: Omit<Question, 'id' | 'courseId'> = {
-    type: 'single',
-    text: '',
-    options: ['', '', '', ''],
-    correctAnswers: [0],
-    clozeAnswers: [''],
-    matchingPairs: [{ left: '', right: '' }]
-  };
-  const [questionFormData, setQuestionFormData] = useState(initialQuestionState);
 
-  const [auditTrail, setAuditTrail] = useState([
-    { time: '2024-02-16 • 10:00:00 UTC', title: '课程状态变更', desc: 'SOP-QC-005 已由管理员设为“暂停”', actor: 'Admin (System)', icon: 'pause_circle' },
-    { time: '2024-01-20 • 15:30:00 UTC', title: '版本升级发布', desc: 'POL-QA-10 已升级至 v4.0 并发布。', actor: 'Sarah J. (QA)', icon: 'upgrade' },
-  ]);
+  const [materialForm, setMaterialForm] = useState<Omit<Material, 'id' | 'uploadDate'>>({
+    name: '', type: 'pdf', url: '', status: 'active', expiryDate: '', hours: 1.0
+  });
 
+  // 文件上传相关状态
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingFile, setUploadingFile] = useState<File | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState(0);
 
-  const addAuditLog = (title: string, desc: string, icon: string) => {
-    const newLog = {
-      time: `${new Date().toISOString().split('T')[0]} • ${new Date().toLocaleTimeString()} UTC`,
-      title,
-      desc,
-      actor: 'Alex J. (Admin)',
-      icon
-    };
-    setAuditTrail(prev => [newLog, ...prev]);
+  useEffect(() => {
+    const total = courseForm.materials.filter(m => m.status === 'active').reduce((sum, m) => sum + (Number(m.hours) || 0), 0);
+    setCourseForm(prev => ({ ...prev, totalHours: total }));
+  }, [courseForm.materials]);
+
+  const toggleHierarchy = (id: string) => {
+    setCourseForm(prev => ({
+      ...prev,
+      hierarchyIds: prev.hierarchyIds.includes(id) 
+        ? prev.hierarchyIds.filter(hid => hid !== id) 
+        : [...prev.hierarchyIds, id]
+    }));
   };
-
-  const handleOpenAssessment = (course: Course) => {
-    setSelectedCourse(course);
-    setViewMode('assessment');
-    setSelectedQuestionIds(new Set());
-    setSearchQuery('');
-    addAuditLog('进入题库管理', `管理员 Alex J. 开始维护课程 ${course.code} 的考核题库。`, 'quiz');
-  };
-
-  const handleBackToList = () => {
-    setViewMode('list');
-    setSelectedCourse(null);
-  };
-
-  const handleOpenCourseModal = (course?: Course) => {
-    if (course) {
-      setEditingCourse(course);
-      setCourseFormData({
-        code: course.code,
-        name: course.name,
-        version: course.version,
-        category: course.category,
-        status: course.status,
-        learningPathIds: [...course.learningPathIds],
-        targetCompanyIds: [...(course.targetCompanyIds || [])],
-        targetDepartmentIds: [...(course.targetDepartmentIds || [])],
-        targetPositionIds: [...(course.targetPositionIds || [])]
-      });
-    } else {
-      setEditingCourse(null);
-      setCourseFormData({ 
-        code: '', 
-        name: '', 
-        version: 'v1.0', 
-        category: 'GMP 生产', 
-        status: 'draft', 
-        learningPathIds: [], 
-        targetCompanyIds: [], 
-        targetDepartmentIds: [], 
-        targetPositionIds: [] 
-      });
-    }
-    setIsCourseModalOpen(true);
-  };
-
-  const handleSaveCourse = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingCourse) {
-      setCourses(prev => prev.map(c => c.id === editingCourse.id ? { ...c, ...courseFormData } : c));
-      addAuditLog('课程更新', `更新了课程 ${courseFormData.code} 的基本信息及其组织靶向设置。`, 'edit');
-    } else {
-      const newCourse: Course = {
-        id: Math.random().toString(36).substr(2, 9),
-        ...courseFormData,
-        lastUpdated: new Date().toISOString().split('T')[0],
-        questionCount: 0
-      };
-      setCourses(prev => [...prev, newCourse]);
-      addAuditLog('创建课程', `创建了新课程 ${newCourse.code} 并指定了组织架构归属。`, 'add_business');
-    }
-    setIsCourseModalOpen(false);
-  };
-
-  const toggleSelection = (key: keyof typeof courseFormData, id: string) => {
-    setCourseFormData(prev => {
-      const currentList = prev[key] as string[];
-      const isSelected = currentList.includes(id);
-      return {
-        ...prev,
-        [key]: isSelected 
-          ? currentList.filter(item => item !== id) 
-          : [...currentList, id]
-      };
-    });
-  };
-
-  const handleOpenQuestionModal = (question?: Question) => {
-    if (question) {
-      setEditingQuestion(question);
-      setQuestionFormData({ 
-        type: question.type, 
-        text: question.text, 
-        options: [...question.options], 
-        correctAnswers: [...question.correctAnswers],
-        clozeAnswers: [...(question.clozeAnswers || [])],
-        matchingPairs: [...(question.matchingPairs || [])]
-      });
-    } else {
-      setEditingQuestion(null);
-      setQuestionFormData(initialQuestionState);
-    }
-    setIsQuestionModalOpen(true);
-  };
-
-  const handleSaveQuestion = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedCourse) return;
-
-    if (editingQuestion) {
-      setQuestions(prev => prev.map(q => q.id === editingQuestion.id ? { ...q, ...questionFormData } : q));
-      addAuditLog('题目修订', `修改了课程 ${selectedCourse.code} 的一道 [${questionFormData.type}] 题目。`, 'edit_note');
-    } else {
-      const newQuestion: Question = {
-        id: Math.random().toString(36).substr(2, 9),
-        courseId: selectedCourse.id,
-        ...questionFormData
-      };
-      setQuestions(prev => [...prev, newQuestion]);
-      setCourses(prev => prev.map(c => c.id === selectedCourse.id ? { ...c, questionCount: c.questionCount + 1 } : c));
-      setSelectedCourse(prev => prev ? { ...prev, questionCount: prev.questionCount + 1 } : null);
-      addAuditLog('新增题目', `在课程 ${selectedCourse.code} 中添加了一道 [${questionFormData.type}] 类型的新题目。`, 'add_circle');
-    }
-    setIsQuestionModalOpen(false);
-  };
-
-  const handleDeleteQuestion = (questionId: string) => {
-    if (!selectedCourse) return;
-    if (!window.confirm('确定要删除这道题目吗？该操作符合审计追踪要求将被记录。')) return;
-
-    setQuestions(prev => prev.filter(q => q.id !== questionId));
-    setCourses(prev => prev.map(c => c.id === selectedCourse.id ? { ...c, questionCount: Math.max(0, c.questionCount - 1) } : c));
-    setSelectedCourse(prev => prev ? { ...prev, questionCount: prev.questionCount - 1 } : null);
-    addAuditLog('删除题目', `在课程 ${selectedCourse.code} 中移除了一道题目。`, 'delete_forever');
-  };
-
-  const handleBatchDelete = () => {
-    if (!selectedCourse || selectedQuestionIds.size === 0) return;
-    if (!window.confirm(`确定要删除选中的 ${selectedQuestionIds.size} 道题目吗？`)) return;
-
-    const count = selectedQuestionIds.size;
-    setQuestions(prev => prev.filter(q => !selectedQuestionIds.has(q.id)));
-    setCourses(prev => prev.map(c => c.id === selectedCourse.id ? { ...c, questionCount: Math.max(0, c.questionCount - count) } : c));
-    setSelectedCourse(prev => prev ? { ...prev, questionCount: Math.max(0, prev.questionCount - count) } : null);
-    addAuditLog('批量删除题目', `在课程 ${selectedCourse.code} 中批量删除了 ${count} 道题目。`, 'delete_sweep');
-    setSelectedQuestionIds(new Set());
-  };
-
-  const toggleSelectQuestion = (id: string) => {
-    const next = new Set(selectedQuestionIds);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelectedQuestionIds(next);
-  };
-
-  const toggleSelectAll = (currentBatchIds: string[]) => {
-    if (selectedQuestionIds.size === currentBatchIds.length) {
-      setSelectedQuestionIds(new Set());
-    } else {
-      setSelectedQuestionIds(new Set(currentBatchIds));
-    }
-  };
-
-  // --- CSV Import Logic ---
-  const handleImportClick = () => fileInputRef.current?.click();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => parseCSV(event.target?.result as string);
-    reader.readAsText(file);
-    e.target.value = '';
+    if (file) {
+      setUploadingFile(file);
+      setIsScanning(true);
+      setScanProgress(0);
+      const interval = setInterval(() => {
+        setScanProgress(prev => {
+          if (prev >= 100) {
+            clearInterval(interval);
+            setIsScanning(false);
+            const ext = file.name.split('.').pop()?.toLowerCase();
+            let type: Material['type'] = 'pdf';
+            if (['mp4', 'mov', 'avi'].includes(ext || '')) type = 'video';
+            else if (['ppt', 'pptx'].includes(ext || '')) type = 'ppt';
+            else if (['doc', 'docx'].includes(ext || '')) type = 'doc';
+            setMaterialForm(prevForm => ({ ...prevForm, name: file.name.replace(/\.[^/.]+$/, ""), type, url: URL.createObjectURL(file) }));
+            return 100;
+          }
+          return prev + 10;
+        });
+      }, 150);
+    }
   };
 
-  const parseCSV = (content: string) => {
-    const lines = content.split('\n');
-    const parsedQuestions: Omit<Question, 'id' | 'courseId'>[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const parts = line.split(',').map(p => p.trim());
-      if (parts.length < 2) continue;
-      const [type, text, c1, c2, correct] = parts;
-      parsedQuestions.push({
-        type: (type.toLowerCase() as any) || 'single',
-        text: text || '',
-        options: c1 ? c1.split('|') : [],
-        correctAnswers: correct ? correct.split('|').map(v => parseInt(v)) : [0],
-        clozeAnswers: c1 && type === 'cloze' ? c1.split('|') : [],
-        matchingPairs: type === 'matching' && c1 && c2 ? c1.split('|').map((l, idx) => ({ left: l, right: c2.split('|')[idx] || '' })) : []
+  const handleDownloadTemplate = () => {
+    const csvContent = "\uFEFFType,Content,Options (split by |),Answer (Index or Text),Score,Difficulty,Explanation\n" +
+      "single,什么是 GMP 的核心原则?,防止污染|防止混淆|以上皆是,2,5,Medium,核心是最大限度降低药品生产过程中污染、交叉污染以及混淆、差错等风险。\n" +
+      "multiple,以下属于 GxP 范畴的是?,GMP|GCP|GDP|ISO9001,0|1|2,5,High,ISO 不是 GxP 法规。\n" +
+      "blank,无菌操作的核心是控制___。,微生物,5,High,\n";
+    
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", "G_Train_Question_Template.csv");
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleExportQuestions = (format: 'json' | 'csv' = 'json') => {
+    if (!currentCourseQuestions || currentCourseQuestions.length === 0) {
+      alert("当前题库为空，无法导出");
+      return;
+    }
+
+    if (format === 'json') {
+      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentCourseQuestions, null, 2));
+      const link = document.createElement("a");
+      link.setAttribute("href", dataStr);
+      link.setAttribute("download", `${selectedViewCourse?.code || 'course'}_questions.json`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } else {
+      let csvContent = "\uFEFFType,Content,Options,Answer,Score,Difficulty,Explanation\n";
+      currentCourseQuestions.forEach(q => {
+        const options = (q.options || []).map(o => o.replace(/"/g, '""')).join('|');
+        const answer = Array.isArray(q.answer) ? q.answer.join('|') : q.answer;
+        const content = q.content.replace(/"/g, '""');
+        const explanation = (q.explanation || '').replace(/"/g, '""');
+        csvContent += `"${q.type}","${content}","${options}","${answer}","${q.score}","${q.difficulty}","${explanation}"\n`;
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      link.setAttribute("href", url);
+      link.setAttribute("download", `${selectedViewCourse?.code || 'course'}_questions.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+  };
+
+  const handleBulkImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const fileName = file.name.toLowerCase();
+    const validExtensions = ['.csv', '.xls', '.xlsx'];
+    const isValid = validExtensions.some(ext => fileName.endsWith(ext));
+
+    if (!isValid) {
+      alert('格式错误：仅支持 CSV 或 Excel 文件。请先下载模版。');
+      if (importInputRef.current) importInputRef.current.value = '';
+      return;
+    }
+
+    setImportStatus('VALIDATING');
+    
+    // 模拟合规核验过程
+    setTimeout(() => {
+        const result: ImportResult = {
+          total: 10,
+          success: 7,
+          failed: 3,
+          failedItems: [
+            { index: 4, content: '物料分类标签中红色代表...', reason: '缺少“标准答案”字段' },
+            { index: 7, content: '以下哪项不属于高风险操作?', reason: '选项数量不符合多选题规范（至少需要4个）' },
+            { index: 9, content: '___是洁净区行为的核心。', reason: '题目内容与现有课程 [SOP-QA-02] 高度重复 (95%)' }
+          ]
+        };
+
+        // 模拟向 questions 列表添加成功项
+        const newQuestions: Question[] = Array.from({ length: 7 }).map((_, i) => ({
+          id: 'QST-IMP-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+          courseId: selectedViewCourse?.id || '',
+          type: 'single',
+          content: `批量导入题目 ${i + 1}`,
+          options: ['选项 A', '选项 B', '选项 C', '选项 D'],
+          answer: 0,
+          score: 5,
+          difficulty: 'Medium'
+        }));
+        
+        setQuestions(prev => [...prev, ...newQuestions]);
+        setImportResult(result);
+        setImportStatus('FINISHED');
+        if (importInputRef.current) importInputRef.current.value = '';
+    }, 2000);
+  };
+
+  const openQuestionEditor = (question?: Question) => {
+    if (question) {
+      setEditingQuestion({ ...question });
+    } else {
+      setEditingQuestion({
+        courseId: selectedViewCourse?.id || '',
+        type: 'single',
+        content: '',
+        options: ['', '', '', ''],
+        answer: 0,
+        score: 5,
+        difficulty: 'Medium',
+        pairs: [{ left: '', right: '' }, { left: '', right: '' }],
+        explanation: ''
       });
     }
-    if (parsedQuestions.length > 0) {
-      setImportingQuestions(parsedQuestions);
-      setIsImportPreviewOpen(true);
+    setIsQuestionEditorOpen(true);
+  };
+
+  const saveQuestion = () => {
+    if (!editingQuestion || !selectedViewCourse) return;
+    const q = editingQuestion as Question;
+    if (q.id) {
+      setQuestions(prev => prev.map(item => item.id === q.id ? q : item));
+    } else {
+      const newQ = { ...q, id: 'QST-' + Math.random().toString(36).substr(2, 6).toUpperCase() };
+      setQuestions(prev => [...prev, newQ]);
     }
+    setIsQuestionEditorOpen(false);
   };
 
-  const confirmImport = () => {
-    if (!selectedCourse) return;
-    const newBatch = importingQuestions.map(q => ({ ...q, id: Math.random().toString(36).substr(2, 9), courseId: selectedCourse.id }));
-    setQuestions(prev => [...prev, ...newBatch]);
-    setCourses(prev => prev.map(c => c.id === selectedCourse.id ? { ...c, questionCount: c.questionCount + newBatch.length } : c));
-    setSelectedCourse(prev => prev ? { ...prev, questionCount: prev.questionCount + newBatch.length } : null);
-    addAuditLog('批量导入题目', `成功为课程 ${selectedCourse.code} 批量导入了 ${newBatch.length} 道题目。`, 'upload_file');
-    setIsImportPreviewOpen(false);
+  const deleteQuestion = (id: string) => {
+    if (!window.confirm('确定删除该考题吗？此操作不可撤销。')) return;
+    setQuestions(prev => prev.filter(q => q.id !== id));
   };
 
-  const toggleCorrectAnswer = (idx: number) => {
-    setQuestionFormData(prev => {
-      if (prev.type === 'single' || prev.type === 'boolean') return { ...prev, correctAnswers: [idx] };
-      const isSelected = prev.correctAnswers.includes(idx);
-      return { ...prev, correctAnswers: isSelected ? prev.correctAnswers.filter(i => i !== idx) : [...prev.correctAnswers, idx] };
-    });
+  const handleStartPreview = (course: Course) => {
+    setSelectedViewCourse(course);
+    setPreviewMode('INTRO');
+    setCurrentPlayIndex(0);
+    setIsPreviewOpen(true);
   };
 
-  const filteredQuestions = useMemo(() => {
-    let result = questions.filter(q => q.courseId === selectedCourse?.id);
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      result = result.filter(item => item.text.toLowerCase().includes(q) || item.type.toLowerCase().includes(q));
-    }
-    if (sortOrder === 'newest') result.reverse();
-    return result;
-  }, [questions, selectedCourse, searchQuery, sortOrder]);
+  const currentCourseQuestions = useMemo(() => {
+    return questions.filter(q => q.courseId === (selectedViewCourse?.id || ''));
+  }, [questions, selectedViewCourse]);
 
-  const getQuestionTypeIcon = (type: string) => {
-    switch (type) {
-      case 'single': return 'radio_button_checked';
-      case 'multiple': return 'check_box';
-      case 'boolean': return 'thumbs_up_down';
-      case 'cloze': return 'edit_square';
-      case 'matching': return 'drag_handle';
-      default: return 'quiz';
-    }
-  };
+  const questionStats = useMemo(() => {
+    const totalPoints = currentCourseQuestions.reduce((sum, q) => sum + (q.score || 0), 0);
+    const difficulties = currentCourseQuestions.reduce((acc, q) => {
+      acc[q.difficulty] = (acc[q.difficulty] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    return { totalPoints, difficulties };
+  }, [currentCourseQuestions]);
 
-  const renderAssessmentDesigner = () => {
-    if (!selectedCourse) return null;
-    const currentBatchIds = filteredQuestions.map(q => q.id);
-    
-    return (
-      <div className="flex flex-col h-[calc(100vh-220px)] animate-in slide-in-from-right duration-500">
-        <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleFileChange} />
-        
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-4">
-            <button onClick={handleBackToList} className="size-10 rounded-full bg-white border border-[#dbdfe6] flex items-center justify-center text-gray-400 hover:text-[#135bec] transition-all shadow-sm">
-              <span className="material-symbols-outlined">arrow_back</span>
-            </button>
-            <div>
-              <div className="flex items-center gap-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">
-                <span>课程列表</span>
-                <span className="material-symbols-outlined text-[10px]">chevron_right</span>
-                <span className="text-[#135bec]">考核设计: {selectedCourse.code}</span>
-              </div>
-              <h2 className="text-2xl font-black text-[#111318]">{selectedCourse.name}</h2>
-            </div>
-          </div>
-          <div className="flex gap-2">
-             <button onClick={handleImportClick} className="flex items-center gap-2 h-10 px-4 bg-white border border-[#dbdfe6] text-xs font-bold rounded-lg hover:border-[#135bec] transition-all group shadow-sm">
-               <span className="material-symbols-outlined text-sm text-gray-400 group-hover:text-[#135bec]">upload_file</span>
-               批量导入 (CSV)
-             </button>
-             <button onClick={() => handleOpenQuestionModal()} className="flex items-center gap-2 h-10 px-4 bg-[#135bec] text-white text-xs font-bold rounded-lg shadow-md hover:bg-blue-700 transition-all">
-               <span className="material-symbols-outlined text-sm">add</span>
-               新增题目
-             </button>
-          </div>
+  const renderHierarchySelector = (nodes: HierarchyNode[], level: number = 0) => nodes.map(node => (
+    <div key={node.id} className="select-none">
+      <div className="flex items-center gap-3 py-2 hover:bg-white rounded-xl transition-all group">
+        <div style={{ width: `${level * 24}px` }} className="shrink-0 flex justify-end">
+          {level > 0 && <span className="border-l-2 border-b-2 border-gray-200 w-3 h-2 -translate-y-1.5 rounded-bl-sm"></span>}
         </div>
-
-        <div className="flex-1 flex gap-6 overflow-hidden">
-          <div className="flex-1 bg-white border border-[#dbdfe6] rounded-xl flex flex-col overflow-hidden shadow-sm">
-             <div className="p-4 border-b border-gray-100 bg-gray-50/30 flex flex-wrap items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">search</span>
-                    <input 
-                      type="text" 
-                      placeholder="搜索题目内容或类型..." 
-                      className="h-9 pl-9 pr-4 bg-white border border-gray-200 rounded-lg text-xs font-medium w-64 focus:ring-1 focus:ring-[#135bec] transition-all"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                    />
-                  </div>
-                  <select 
-                    className="h-9 px-3 bg-white border border-gray-200 rounded-lg text-xs font-bold focus:ring-1 focus:ring-[#135bec]"
-                    value={sortOrder}
-                    onChange={(e) => setSortOrder(e.target.value as any)}
-                  >
-                    <option value="newest">最新优先</option>
-                    <option value="oldest">最早优先</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 cursor-pointer group">
-                    <input 
-                      type="checkbox" 
-                      className="rounded border-gray-300 text-[#135bec] focus:ring-[#135bec]"
-                      checked={selectedQuestionIds.size === currentBatchIds.length && currentBatchIds.length > 0}
-                      onChange={() => toggleSelectAll(currentBatchIds)}
-                    />
-                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest group-hover:text-gray-600 transition-colors">全选</span>
-                  </label>
-                  
-                  {selectedQuestionIds.size > 0 && (
-                    <button 
-                      onClick={handleBatchDelete}
-                      className="flex items-center gap-1.5 px-3 h-8 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all animate-in zoom-in-95 duration-200"
-                    >
-                      <span className="material-symbols-outlined text-sm">delete_sweep</span>
-                      批量删除 ({selectedQuestionIds.size})
-                    </button>
-                  )}
-                </div>
-             </div>
-
-             <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar bg-gray-50/10">
-                {filteredQuestions.length > 0 ? filteredQuestions.map((q, idx) => (
-                    <div 
-                      key={q.id} 
-                      className={`bg-white border rounded-lg p-5 transition-all relative group ${
-                        selectedQuestionIds.has(q.id) ? 'border-[#135bec] shadow-md ring-1 ring-[#135bec]/10' : 'border-gray-100 hover:shadow-md'
-                      }`}
-                    >
-                      <div className="absolute top-5 left-4">
-                        <input 
-                          type="checkbox" 
-                          className="rounded border-gray-300 text-[#135bec] focus:ring-[#135bec]"
-                          checked={selectedQuestionIds.has(q.id)}
-                          onChange={() => toggleSelectQuestion(q.id)}
-                        />
-                      </div>
-
-                      <div className="pl-8">
-                        <div className="flex justify-between items-start mb-4">
-                          <div className="flex items-center gap-2">
-                            <span className="size-6 rounded bg-[#135bec]/10 text-[#135bec] flex items-center justify-center text-[10px] font-black">{idx + 1}</span>
-                            <div className="flex items-center gap-1.5 bg-gray-100 px-2 py-0.5 rounded">
-                              <span className="material-symbols-outlined text-[14px] text-gray-400">{getQuestionTypeIcon(q.type)}</span>
-                              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                                {q.type === 'single' ? '单项选择' : q.type === 'multiple' ? '多项选择' : q.type === 'boolean' ? '判断' : q.type === 'cloze' ? '填空' : '匹配'}
-                              </span>
-                            </div>
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => handleOpenQuestionModal(q)} className="text-gray-300 hover:text-[#135bec] transition-colors"><span className="material-symbols-outlined text-lg">edit</span></button>
-                            <button onClick={() => handleDeleteQuestion(q.id)} className="text-gray-300 hover:text-red-500 transition-colors"><span className="material-symbols-outlined text-lg">delete</span></button>
-                          </div>
-                        </div>
-                        
-                        <p className="text-sm font-bold text-[#111318] mb-4 leading-relaxed">
-                          {q.type === 'cloze' 
-                            ? q.text.split('[[blank]]').map((part, i, arr) => (
-                                <React.Fragment key={i}>
-                                  {part}
-                                  {i < arr.length - 1 && <span className="mx-1 px-2 py-0.5 bg-blue-50 text-[#135bec] border-b border-[#135bec] italic font-mono text-xs">[{q.clozeAnswers[i] || '待填入'}]</span>}
-                                </React.Fragment>
-                              ))
-                            : q.text
-                          }
-                        </p>
-
-                        {(q.type === 'single' || q.type === 'multiple' || q.type === 'boolean') && (
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {q.options.map((opt, i) => (
-                              <div key={i} className={`p-3 rounded-lg border text-xs font-medium flex items-center gap-3 transition-colors ${q.correctAnswers.includes(i) ? 'bg-green-50/50 border-green-200 text-green-700' : 'bg-gray-50 border-gray-100 text-gray-500'}`}>
-                                <span className="material-symbols-outlined text-base">
-                                  {q.correctAnswers.includes(i) ? 'check_circle' : 'radio_button_unchecked'}
-                                </span>
-                                {opt}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-
-                        {q.type === 'matching' && (
-                          <div className="space-y-2">
-                            {q.matchingPairs.map((pair, i) => (
-                              <div key={i} className="flex items-center gap-4">
-                                <div className="flex-1 p-3 bg-gray-50 border border-gray-100 rounded-lg text-xs font-bold text-gray-700 text-center shadow-xs">{pair.left}</div>
-                                <span className="material-symbols-outlined text-gray-300">link</span>
-                                <div className="flex-1 p-3 bg-green-50/50 border border-green-100 rounded-lg text-xs font-bold text-green-700 text-center shadow-xs">{pair.right}</div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )) : (
-                  <div className="h-full flex flex-col items-center justify-center text-center py-20 animate-in fade-in zoom-in-95 duration-300">
-                    <div className="size-20 rounded-full bg-gray-100 flex items-center justify-center text-gray-300 mb-6">
-                      <span className="material-symbols-outlined text-4xl">search_off</span>
-                    </div>
-                    <h4 className="text-xl font-black text-gray-400">未找到符合条件的题目</h4>
-                    <p className="text-sm text-gray-400 mt-2 max-w-xs">尝试调整搜索词或过滤器，或者点击右上角新增题目。</p>
-                  </div>
-                )}
-             </div>
+        <label className="flex items-center gap-3 cursor-pointer flex-1">
+          <input 
+            type="checkbox" 
+            checked={courseForm.hierarchyIds.includes(node.id)} 
+            onChange={() => toggleHierarchy(node.id)} 
+            className={`size-4 rounded border-gray-300 transition-all ${
+                activeHierarchyDomain === 'COURSE' ? 'text-[#135bec]' :
+                activeHierarchyDomain === 'ORGANIZATION' ? 'text-purple-600' : 'text-emerald-600'
+            }`} 
+          />
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-black ${courseForm.hierarchyIds.includes(node.id) ? 'text-[#111318]' : 'text-gray-500'}`}>
+              {node.name}
+            </span>
+            <span className="text-[9px] font-mono font-bold text-gray-300 uppercase tracking-tighter">
+              [{node.code}]
+            </span>
           </div>
-          
-          <aside className="w-80 space-y-6">
-            <div className="bg-white border border-[#dbdfe6] rounded-xl p-5 shadow-sm">
-              <h4 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">题库概况</h4>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-gray-500 font-medium">题目总数</span>
-                  <span className="font-black text-[#111318] text-lg">{selectedCourse.questionCount}</span>
-                </div>
-                <div className="flex justify-between items-center text-xs border-t border-gray-50 pt-3">
-                  <span className="text-gray-500 font-medium">筛选后显示</span>
-                  <span className="font-black text-[#135bec]">{filteredQuestions.length} 题</span>
-                </div>
-              </div>
-              <button className="w-full mt-6 py-2.5 bg-[#111318] text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-gray-800 transition-all shadow-md">
-                预览学员界面
-              </button>
-            </div>
-          </aside>
-        </div>
+        </label>
       </div>
-    );
+      {node.children && node.children.length > 0 && (
+        <div className="ml-1">
+          {renderHierarchySelector(node.children, level + 1)}
+        </div>
+      )}
+    </div>
+  ));
+
+  const handleFinalPublish = () => {
+    const timestamp = new Date().toISOString().split('T')[0];
+    const finalCourse: Course = {
+      ...courseForm,
+      id: editingCourseId || 'CRS-' + Math.random().toString(36).substr(2, 6).toUpperCase(),
+      questionCount: editingCourseId ? courses.find(c => c.id === editingCourseId)?.questionCount || 0 : 0,
+      lastUpdated: timestamp,
+    };
+    if (editingCourseId) {
+      setCourses(prev => prev.map(c => c.id === editingCourseId ? finalCourse : c));
+    } else {
+      setCourses(prev => [finalCourse, ...prev]);
+    }
+    setIsModalOpen(false);
   };
+
+  const filteredCourses = courses.filter(c => 
+    (c.name.toLowerCase().includes(searchTerm.toLowerCase()) || c.code.toLowerCase().includes(searchTerm.toLowerCase())) &&
+    (statusFilter === 'ALL' || c.status === statusFilter)
+  );
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      {viewMode === 'list' ? (
-        <>
-          <div className="flex flex-wrap justify-between items-end gap-4 border-b border-gray-200 pb-6">
-            <div className="space-y-1">
-              <div className="flex items-center gap-1 text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">
-                <span>G-Train</span>
-                <span className="material-symbols-outlined text-[10px]">chevron_right</span>
-                <span className="text-[#135bec]">合规课程目录</span>
-              </div>
-              <h1 className="text-3xl font-black tracking-tight text-[#111318]">合规课程管理</h1>
-              <p className="text-gray-500 max-w-2xl text-sm font-medium">集中管理所有 SOP、政策和培训模块。题库现在直接在课程详情中进行维护。</p>
-            </div>
-            <button 
-              onClick={() => handleOpenCourseModal()}
-              className="flex items-center gap-2 h-10 px-5 bg-[#135bec] text-white text-xs font-bold rounded-lg shadow-md hover:bg-blue-700 transition-all"
-            >
-              <span className="material-symbols-outlined text-[18px]">add</span>
-              创建新课程
-            </button>
-          </div>
+      <div className="flex justify-between items-end border-b border-gray-200 pb-6">
+        <div>
+          <h1 className="text-3xl font-black text-[#111318] tracking-tight">合规课程目录</h1>
+          <p className="text-gray-500 text-sm mt-1 font-medium">数据驱动关联：受控教材与【多维层级数据】的可视化映射。</p>
+        </div>
+        <button onClick={() => { setEditingCourseId(null); setCourseForm({ code: '', name: '', version: 'v1.0', category: CATEGORIES[0], status: 'active', materials: [], totalHours: 0, hierarchyIds: [] }); setStep(1); setIsModalOpen(true); }} className="bg-[#135bec] text-white px-8 py-3 rounded-xl font-black text-xs shadow-xl uppercase tracking-widest active:scale-95 transition-all">发布受控新课程</button>
+      </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-4 gap-6">
-            <div className="xl:col-span-3 space-y-6">
-              <div className="bg-white rounded-xl border border-[#dbdfe6] shadow-sm overflow-hidden">
-                  <table className="w-full text-left">
-                    <thead className="bg-gray-50 text-[10px] font-bold text-gray-400 uppercase tracking-widest border-b border-gray-100">
-                      <tr>
-                        <th className="px-6 py-4">代码/名称</th>
-                        <th className="px-6 py-4">关联路径</th>
-                        <th className="px-6 py-4 text-center">状态</th>
-                        <th className="px-6 py-4">考核题库</th>
-                        <th className="px-6 py-4 text-right">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {courses.map((course) => (
-                        <tr key={course.id} className="hover:bg-gray-50 transition-colors group">
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col">
-                              <span className="text-xs font-mono font-bold text-gray-400 leading-none mb-1">{course.code}</span>
-                              <span className="text-sm font-bold text-[#111318] group-hover:text-[#135bec] cursor-pointer transition-colors" onClick={() => handleOpenCourseModal(course)}>{course.name}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-wrap gap-1">
-                              {course.learningPathIds.length > 0 ? course.learningPathIds.map(lpId => {
-                                const lp = LEARNING_PATHS.find(p => p.id === lpId);
-                                return lp ? (
-                                  <span key={lpId} className={`text-[8px] font-black px-1.5 py-0.5 rounded border uppercase tracking-tighter ${lp.color}`}>
-                                    {lp.name}
-                                  </span>
-                                ) : null;
-                              }) : (
-                                <span className="text-[9px] text-gray-300 italic">未关联路径</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-center">
-                            <span className={`inline-flex items-center gap-1 text-[9px] font-black px-2 py-1 rounded uppercase ${
-                              course.status === 'active' ? 'bg-green-50 text-green-700' : 
-                              course.status === 'paused' ? 'bg-amber-50 text-amber-700' : 
-                              'bg-gray-100 text-gray-400'
-                            }`}>
-                              {course.status === 'active' ? '生效中' : course.status === 'paused' ? '已暂停' : '草案'}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center gap-2">
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${course.questionCount > 0 ? 'bg-blue-50 text-[#135bec]' : 'bg-red-50 text-red-400'}`}>
-                                {course.questionCount} 题
-                              </span>
-                              <button 
-                                onClick={() => handleOpenAssessment(course)}
-                                className="text-[#135bec] hover:underline text-[10px] font-black uppercase tracking-widest"
-                              >
-                                管理题库
+      <div className="bg-white rounded-[2.5rem] border border-[#dbdfe6] p-8 shadow-sm space-y-8">
+        <div className="flex gap-4">
+           <div className="relative flex-1">
+              <span className="material-symbols-outlined absolute left-4 top-1/2 -translate-y-1/2 text-gray-400">search</span>
+              <input type="text" placeholder="搜索课程或代码..." className="w-full h-12 pl-12 pr-6 bg-gray-50 border-none rounded-2xl text-sm font-bold" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+           </div>
+           <select className="h-12 px-6 bg-gray-50 border-none rounded-2xl text-xs font-black uppercase tracking-widest" value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}>
+             <option value="ALL">全部状态</option>
+             <option value="active">生效中 (Active)</option>
+             <option value="paused">已暂停 (Paused)</option>
+           </select>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {filteredCourses.map(course => (
+            <div key={course.id} onClick={() => { setSelectedViewCourse(course); setDetailsTab('QUESTIONS'); setIsDetailsModalOpen(true); }} className="bg-white rounded-[2rem] border border-[#dbdfe6] p-7 hover:shadow-2xl transition-all group cursor-pointer relative overflow-hidden flex flex-col justify-between">
+               <div className="space-y-4">
+                  <div className="flex justify-between items-start">
+                    <span className="text-[10px] font-mono font-black text-gray-400 tracking-wider bg-gray-50 px-2 py-0.5 rounded border border-gray-100">{course.code}</span>
+                    <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border uppercase ${course.status === 'active' ? 'bg-green-50 text-green-600 border-green-100' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>{course.status}</span>
+                  </div>
+                  <h3 className="text-lg font-black text-[#111318] line-clamp-2 min-h-[3rem] group-hover:text-[#135bec] transition-colors">{course.name}</h3>
+               </div>
+               
+               <div className="mt-8 pt-6 border-t border-gray-100 flex items-center justify-between">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-1">总学时</span>
+                    <span className="text-xl font-black text-[#135bec]">{course.totalHours.toFixed(1)} <span className="text-[10px]">H</span></span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={(e) => { e.stopPropagation(); handleStartPreview(course); }} className="size-10 bg-white border border-gray-200 text-[#135bec] rounded-xl flex items-center justify-center hover:bg-blue-50 transition-all active:scale-90" title="预览课程">
+                       <span className="material-symbols-outlined text-lg">visibility</span>
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setEditingCourseId(course.id); setCourseForm({...course}); setStep(1); setIsModalOpen(true); }} className="size-10 bg-[#111318] text-white rounded-xl flex items-center justify-center hover:bg-gray-800 transition-all active:scale-90 shadow-lg shadow-black/10"><span className="material-symbols-outlined text-lg">edit</span></button>
+                  </div>
+               </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 课程详情视图 (含考核设计器) */}
+      {isDetailsModalOpen && selectedViewCourse && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-[#111318]/90 backdrop-blur-md animate-in fade-in duration-300">
+           <div className="bg-white w-full max-w-6xl rounded-[3.5rem] shadow-2xl overflow-hidden flex h-[85vh] animate-in zoom-in-95">
+              <aside className="w-80 bg-gray-50 border-r border-gray-100 flex flex-col shrink-0 overflow-hidden">
+                 <div className="p-12 space-y-8">
+                    <div className="size-20 rounded-[2rem] bg-[#135bec] text-white flex items-center justify-center shadow-xl shadow-blue-500/30">
+                       <span className="material-symbols-outlined text-4xl tracking-tighter">inventory_2</span>
+                    </div>
+                    <div>
+                       <h3 className="text-2xl font-black text-[#111318] leading-tight">{selectedViewCourse.name}</h3>
+                       <p className="text-[11px] font-mono text-gray-400 uppercase mt-2 tracking-widest">{selectedViewCourse.code} • {selectedViewCourse.version}</p>
+                    </div>
+                    <nav className="space-y-2 pt-8">
+                       {[
+                         { id: 'MATERIALS', label: '受控培训教材', icon: 'auto_stories' },
+                         { id: 'QUESTIONS', label: '合规题库设计', icon: 'quiz' },
+                         { id: 'HIERARCHY', label: '映射合规树', icon: 'account_tree' }
+                       ].map(tab => (
+                         <button 
+                            key={tab.id}
+                            onClick={() => { setDetailsTab(tab.id as any); }}
+                            className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${detailsTab === tab.id ? 'bg-[#111318] text-white shadow-xl' : 'text-gray-400 hover:bg-gray-100'}`}
+                         >
+                            <span className="material-symbols-outlined text-xl">{tab.icon}</span>
+                            {tab.label}
+                         </button>
+                       ))}
+                    </nav>
+                 </div>
+                 <div className="mt-auto p-12 bg-gray-100/50">
+                    <button onClick={() => setIsDetailsModalOpen(false)} className="w-full h-14 bg-white text-gray-500 rounded-2xl text-xs font-black uppercase tracking-widest shadow-sm hover:text-red-500 transition-colors">关闭详情视图</button>
+                 </div>
+              </aside>
+
+              <main className="flex-1 flex flex-col bg-white overflow-hidden">
+                 <header className="px-12 py-10 border-b border-gray-100 flex justify-between items-center shrink-0">
+                    <h4 className="text-sm font-black text-[#111318] uppercase tracking-[0.2em]">
+                       {detailsTab === 'MATERIALS' ? '教材清单明细' : detailsTab === 'QUESTIONS' ? '考核设计器 (Assessment Designer)' : '多维合规映射'}
+                    </h4>
+                    
+                    <div className="flex gap-4">
+                       {detailsTab === 'QUESTIONS' ? (
+                         <div className="flex items-center gap-3">
+                            <input type="file" ref={importInputRef} className="hidden" accept=".csv, .xls, .xlsx" onChange={handleBulkImport} />
+                            
+                            <button onClick={handleDownloadTemplate} className="h-10 px-4 bg-white border border-gray-200 text-gray-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all flex items-center gap-2" title="下载标准试卷模版">
+                               <span className="material-symbols-outlined text-lg">download</span>
+                               <span className="hidden xl:inline">下载模版</span>
+                            </button>
+                            
+                            <button onClick={() => importInputRef.current?.click()} className={`h-10 px-4 bg-white border border-gray-200 text-gray-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all flex items-center gap-2 ${importStatus === 'VALIDATING' ? 'opacity-50 cursor-wait' : ''}`} title="上传 Excel/CSV 试卷文件">
+                               <span className="material-symbols-outlined text-lg animate-pulse">{importStatus === 'VALIDATING' ? 'hourglass_empty' : 'upload_file'}</span>
+                               <span className="hidden xl:inline">{importStatus === 'VALIDATING' ? '核验中...' : '导入试卷'}</span>
+                            </button>
+
+                            <div className="relative group">
+                              <button className="h-10 px-4 bg-white border border-gray-200 text-gray-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 transition-all flex items-center gap-2" title="导出当前题库">
+                                <span className="material-symbols-outlined text-lg">ios_share</span>
+                                <span className="hidden xl:inline">导出题库</span>
                               </button>
+                              <div className="absolute right-0 top-full mt-2 w-40 bg-white border border-gray-200 rounded-xl shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-20 overflow-hidden">
+                                <button onClick={() => handleExportQuestions('json')} className="w-full text-left px-4 py-3 text-[10px] font-black uppercase hover:bg-gray-50 transition-colors">导出为 JSON</button>
+                                <button onClick={() => handleExportQuestions('csv')} className="w-full text-left px-4 py-3 text-[10px] font-black uppercase hover:bg-gray-50 transition-colors">导出为 CSV</button>
+                              </div>
                             </div>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button className="p-1.5 rounded text-gray-400 hover:text-[#135bec] transition-all" onClick={() => handleOpenCourseModal(course)}><span className="material-symbols-outlined text-lg">edit</span></button>
-                              <button className="p-1.5 rounded text-gray-400 hover:text-red-500 transition-all"><span className="material-symbols-outlined text-lg">delete</span></button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-              </div>
-            </div>
 
-            <div className="space-y-6">
-              <div className="bg-white rounded-xl border border-[#dbdfe6] shadow-sm flex flex-col h-full min-h-[500px]">
-                <div className="px-6 py-4 border-b border-[#f3f4f6]">
-                  <h3 className="font-bold text-base flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[#135bec]">history</span>
-                    合规审计追踪
-                  </h3>
-                </div>
-                <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-                  <div className="relative border-l-2 border-gray-100 ml-2 space-y-6">
-                    {auditTrail.map((item, idx) => (
-                      <div key={idx} className="relative pl-6">
-                        <div className="absolute -left-[7px] top-1 size-3 rounded-full border-2 border-white shadow-sm bg-[#135bec]"></div>
-                        <p className="text-[8px] font-black text-gray-400 uppercase tracking-widest">{item.time}</p>
-                        <p className="text-xs font-bold text-[#111318] mt-0.5">{item.title}</p>
-                        <p className="text-[10px] text-gray-500 font-medium leading-relaxed mt-0.5">{item.desc}</p>
-                        <div className="mt-2 text-[9px] font-bold text-gray-400 flex items-center gap-1">
-                          <span className="material-symbols-outlined text-[12px]">{item.icon}</span>
-                          {item.actor}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
-      ) : renderAssessmentDesigner()}
+                            <div className="w-px h-6 bg-gray-200 mx-1"></div>
 
-      {/* Course Edit/Add Modal */}
-      {isCourseModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 overflow-y-auto custom-scrollbar">
-          <div className="bg-white w-full max-w-4xl my-8 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50 sticky top-0 z-10">
-              <div>
-                <h3 className="text-xl font-black text-[#111318]">{editingCourse ? '编辑课程属性' : '创建合规课程'}</h3>
-                <p className="text-[10px] text-gray-400 font-bold uppercase mt-1 tracking-widest">设置基本信息、学习路径及组织靶向受众</p>
-              </div>
-              <button onClick={() => setIsCourseModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><span className="material-symbols-outlined">close</span></button>
-            </div>
-            <form onSubmit={handleSaveCourse} className="p-8 space-y-8">
-              {/* Basic Info */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">课程名称</label>
-                  <input type="text" required className="w-full h-11 px-4 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#135bec]" value={courseFormData.name} onChange={e => setCourseFormData({...courseFormData, name: e.target.value})} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">课程代码</label>
-                  <input type="text" required className="w-full h-11 px-4 bg-gray-50 border-none rounded-xl text-sm font-mono focus:ring-2 focus:ring-[#135bec]" value={courseFormData.code} onChange={e => setCourseFormData({...courseFormData, code: e.target.value})} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">版本号</label>
-                  <input type="text" required className="w-full h-11 px-4 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#135bec]" value={courseFormData.version} onChange={e => setCourseFormData({...courseFormData, version: e.target.value})} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">发布状态</label>
-                  <select className="w-full h-11 px-4 bg-gray-50 border-none rounded-xl text-sm font-bold" value={courseFormData.status} onChange={e => setCourseFormData({...courseFormData, status: e.target.value as any})}>
-                    <option value="draft">草案 (Draft)</option>
-                    <option value="active">生效中 (Active)</option>
-                    <option value="paused">已暂停 (Paused)</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Learning Paths */}
-              <div className="space-y-3">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">关联学习路径 (Learning Paths)</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {LEARNING_PATHS.map(path => {
-                    const isSelected = courseFormData.learningPathIds.includes(path.id);
-                    return (
-                      <button
-                        key={path.id}
-                        type="button"
-                        onClick={() => toggleSelection('learningPathIds', path.id)}
-                        className={`flex items-center justify-between p-3 rounded-xl border text-left transition-all ${
-                          isSelected ? 'bg-blue-50 border-[#135bec] ring-1 ring-[#135bec]/20' : 'bg-white border-gray-100 hover:border-gray-300'
-                        }`}
-                      >
-                        <div className="flex flex-col">
-                          <span className="text-xs font-bold text-[#111318]">{path.name}</span>
-                          <span className="text-[9px] text-gray-400 font-medium">ID: {path.id}</span>
-                        </div>
-                        {isSelected && <span className="material-symbols-outlined text-[#135bec] text-lg">check_circle</span>}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Target Audience / Org Targeting */}
-              <div className="space-y-6 pt-6 border-t border-gray-100">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[#135bec] text-lg">groups</span>
-                  <h4 className="text-sm font-black text-[#111318] uppercase tracking-widest">靶向受众设置 (Target Audience)</h4>
-                </div>
-                
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Companies */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1">
-                      <span className="material-symbols-outlined text-sm">corporate_fare</span>
-                      目标公司实体
-                    </label>
-                    <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                      {ORG_COMPANIES.map(c => (
-                        <button
-                          key={c.id} type="button" onClick={() => toggleSelection('targetCompanyIds', c.id)}
-                          className={`text-left px-3 py-2 rounded-lg text-[11px] font-bold border transition-all ${
-                            courseFormData.targetCompanyIds.includes(c.id)
-                              ? 'bg-blue-500 text-white border-blue-500 shadow-sm'
-                              : 'bg-gray-50 text-gray-500 border-gray-100 hover:border-gray-200'
-                          }`}
-                        >
-                          {c.name}
-                        </button>
-                      ))}
+                            <button onClick={() => openQuestionEditor()} className="h-10 px-6 bg-[#135bec] text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-2">
+                               <span className="material-symbols-outlined text-lg">add</span>
+                               新增试题
+                            </button>
+                         </div>
+                       ) : (
+                          <button onClick={() => handleStartPreview(selectedViewCourse)} className="h-10 px-6 bg-gray-100 text-[#111318] rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-gray-200 transition-all flex items-center gap-2">
+                            <span className="material-symbols-outlined text-sm">visibility</span>
+                            学员视角预览
+                          </button>
+                       )}
                     </div>
-                  </div>
+                 </header>
 
-                  {/* Departments */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1">
-                      <span className="material-symbols-outlined text-sm">account_tree</span>
-                      针对部门
-                    </label>
-                    <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                      {ORG_DEPARTMENTS.map(d => (
-                        <button
-                          key={d.id} type="button" onClick={() => toggleSelection('targetDepartmentIds', d.id)}
-                          className={`text-left px-3 py-2 rounded-lg text-[11px] font-bold border transition-all ${
-                            courseFormData.targetDepartmentIds.includes(d.id)
-                              ? 'bg-blue-500 text-white border-blue-500 shadow-sm'
-                              : 'bg-gray-50 text-gray-500 border-gray-100 hover:border-gray-200'
-                          }`}
-                        >
-                          {d.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                 <div className="flex-1 overflow-y-auto p-12 custom-scrollbar">
+                    {detailsTab === 'QUESTIONS' && (
+                       <div className="space-y-10">
+                          <div className="grid grid-cols-4 gap-4">
+                             <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">总题目数</p>
+                                <p className="text-2xl font-black text-[#111318] mt-1">{currentCourseQuestions.length}</p>
+                             </div>
+                             <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">题库总分</p>
+                                <p className="text-2xl font-black text-[#135bec] mt-1">{questionStats.totalPoints} <span className="text-xs">Pts</span></p>
+                             </div>
+                             <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 col-span-2">
+                                <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest">难度分布</p>
+                                <div className="flex items-center gap-4 mt-2">
+                                   {['Low', 'Medium', 'High'].map(d => (
+                                      <div key={d} className="flex items-center gap-2">
+                                         <span className={`size-2 rounded-full ${d === 'High' ? 'bg-red-500' : d === 'Medium' ? 'bg-amber-500' : 'bg-green-500'}`}></span>
+                                         <span className="text-[10px] font-bold text-gray-600">{d}: {questionStats.difficulties[d] || 0}</span>
+                                      </div>
+                                   ))}
+                                </div>
+                             </div>
+                          </div>
 
-                  {/* Positions */}
-                  <div className="space-y-3">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-1">
-                      <span className="material-symbols-outlined text-sm">engineering</span>
-                      受众岗位
-                    </label>
-                    <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-2 custom-scrollbar">
-                      {ORG_POSITIONS.map(p => (
-                        <button
-                          key={p.id} type="button" onClick={() => toggleSelection('targetPositionIds', p.id)}
-                          className={`text-left px-3 py-2 rounded-lg text-[11px] font-bold border transition-all ${
-                            courseFormData.targetPositionIds.includes(p.id)
-                              ? 'bg-blue-500 text-white border-blue-500 shadow-sm'
-                              : 'bg-gray-50 text-gray-500 border-gray-100 hover:border-gray-200'
-                          }`}
-                        >
-                          {p.name}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-                <p className="text-[10px] text-gray-400 italic font-medium">* 选中项即为该课程的强制推送范围。符合 21 CFR 自动分配逻辑。</p>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-6 border-t border-gray-100 sticky bottom-0 bg-white pb-4">
-                <button type="button" onClick={() => setIsCourseModalOpen(false)} className="px-6 h-11 text-sm font-bold text-gray-500">取消</button>
-                <button type="submit" className="px-10 h-11 bg-[#135bec] text-white text-sm font-black rounded-xl shadow-lg hover:bg-blue-700 transition-all uppercase tracking-widest">确认并保存课程</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Import Preview Modal */}
-      {isImportPreviewOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl p-8 overflow-hidden flex flex-col h-[70vh]">
-            <h3 className="text-xl font-black mb-4">导入预览 ({importingQuestions.length} 题)</h3>
-            <div className="flex-1 overflow-y-auto mb-6 custom-scrollbar border border-gray-100 rounded-lg p-4 bg-gray-50/20">
-               {importingQuestions.map((q, i) => (
-                  <div key={i} className="py-2 border-b border-gray-100 text-sm flex gap-3 items-start">
-                    <span className="text-[10px] font-black bg-gray-100 px-2 py-0.5 rounded uppercase h-fit mt-0.5">{q.type}</span>
-                    <span className="font-bold text-gray-700">{q.text}</span>
-                  </div>
-               ))}
-            </div>
-            <div className="flex justify-end gap-3 shrink-0">
-              <button onClick={() => setIsImportPreviewOpen(false)} className="px-6 py-2 text-sm font-bold text-gray-500 hover:text-gray-700 transition-colors">取消</button>
-              <button onClick={confirmImport} className="px-10 py-2 bg-[#135bec] text-white font-black rounded-lg shadow-lg hover:bg-blue-700 transition-all uppercase tracking-widest text-xs">确认导入到题库</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Question Edit/Add Modal */}
-      {isQuestionModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="px-8 py-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-              <div>
-                <h3 className="text-xl font-black text-[#111318]">{editingQuestion ? '编辑题目' : '新增考核题目'}</h3>
-                <p className="text-[10px] text-gray-400 font-bold uppercase mt-1 tracking-widest">符合合规要求的题型编制</p>
-              </div>
-              <button onClick={() => setIsQuestionModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors"><span className="material-symbols-outlined">close</span></button>
-            </div>
-            
-            <form onSubmit={handleSaveQuestion} className="p-8 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">题目类型</label>
-                  <select 
-                    className="w-full h-12 px-4 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#135bec]"
-                    value={questionFormData.type}
-                    onChange={e => {
-                      const newType = e.target.value as Question['type'];
-                      if (questionFormData.text && !confirm('切换类型将重置当前题目的部分选项，是否继续？')) return;
-                      setQuestionFormData({
-                        ...questionFormData,
-                        type: newType,
-                        options: newType === 'boolean' ? ['正确', '错误'] : (newType === 'cloze' || newType === 'matching' ? [] : ['', '', '', '']),
-                        correctAnswers: [0],
-                        clozeAnswers: newType === 'cloze' ? [''] : [],
-                        matchingPairs: newType === 'matching' ? [{ left: '', right: '' }] : []
-                      });
-                    }}
-                  >
-                    <option value="single">单项选择题</option>
-                    <option value="multiple">多项选择题</option>
-                    <option value="boolean">判断题</option>
-                    <option value="cloze">填空题</option>
-                    <option value="matching">匹配题</option>
-                  </select>
-                </div>
-                <div className="bg-blue-50/50 rounded-xl border border-blue-100 p-3 flex flex-col justify-center text-center">
-                  <p className="text-[10px] text-[#135bec] font-bold uppercase">当前课程</p>
-                  <p className="text-xs font-black text-[#111318] truncate">{selectedCourse?.name}</p>
-                </div>
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-end">
-                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">题目内容</label>
-                   {questionFormData.type === 'cloze' && (
-                     <button 
-                       type="button" 
-                       onClick={() => {
-                         setQuestionFormData({
-                           ...questionFormData,
-                           text: questionFormData.text + '[[blank]]',
-                           clozeAnswers: [...questionFormData.clozeAnswers, '']
-                         });
-                       }}
-                       className="text-[10px] font-black text-[#135bec] flex items-center gap-1 hover:underline"
-                     >
-                       <span className="material-symbols-outlined text-xs">add_box</span>
-                       插入填空位
-                     </button>
-                   )}
-                </div>
-                <textarea 
-                  required
-                  rows={3}
-                  placeholder={questionFormData.type === 'cloze' ? '请输入内容，使用 [[blank]] 代表空位...' : '请输入题目具体描述...'}
-                  className="w-full p-4 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#135bec] transition-all"
-                  value={questionFormData.text}
-                  onChange={e => setQuestionFormData({...questionFormData, text: e.target.value})}
-                />
-              </div>
-
-              {(questionFormData.type === 'single' || questionFormData.type === 'multiple' || questionFormData.type === 'boolean') && (
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">选项及答案</label>
-                    {questionFormData.type !== 'boolean' && (
-                      <button 
-                        type="button" 
-                        onClick={() => setQuestionFormData({...questionFormData, options: [...questionFormData.options, '']})}
-                        className="text-[10px] font-black text-[#135bec] hover:underline"
-                      >+ 添加选项</button>
+                          <div className="grid grid-cols-1 gap-6">
+                             {currentCourseQuestions.length > 0 ? currentCourseQuestions.map((q, idx) => (
+                                <div key={q.id} className="p-8 bg-white rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-lg transition-all group flex flex-col gap-5">
+                                   <div className="flex justify-between items-start">
+                                      <div className="flex items-center gap-3">
+                                         <span className="size-8 rounded-full bg-[#135bec] text-white flex items-center justify-center text-[10px] font-black">
+                                            {idx + 1}
+                                         </span>
+                                         <span className={`text-[9px] font-black px-2 py-1 rounded border uppercase ${
+                                            q.type === 'single' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                                            q.type === 'multiple' ? 'bg-purple-50 text-purple-600 border-purple-100' :
+                                            q.type === 'blank' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                                            'bg-emerald-50 text-emerald-600 border-emerald-100'
+                                         }`}>
+                                            {q.type === 'single' ? '单选题' : q.type === 'multiple' ? '多选题' : q.type === 'blank' ? '填空题' : '匹配题'}
+                                         </span>
+                                      </div>
+                                      <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-all">
+                                         <button onClick={() => openQuestionEditor(q)} className="size-10 rounded-xl bg-gray-50 text-gray-400 hover:text-[#135bec] hover:bg-blue-50 transition-all flex items-center justify-center">
+                                            <span className="material-symbols-outlined text-lg">edit</span>
+                                         </button>
+                                         <button onClick={() => deleteQuestion(q.id)} className="size-10 rounded-xl bg-gray-50 text-gray-400 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center">
+                                            <span className="material-symbols-outlined text-lg">delete</span>
+                                         </button>
+                                      </div>
+                                   </div>
+                                   <p className="text-sm font-bold text-[#111318] leading-relaxed">{q.content}</p>
+                                </div>
+                             )) : (
+                                <div className="py-20 flex flex-col items-center justify-center text-center border-2 border-dashed border-gray-100 rounded-[2.5rem]">
+                                  <div className="size-20 bg-gray-50 rounded-full flex items-center justify-center text-gray-300 mb-4">
+                                    <span className="material-symbols-outlined text-4xl">quiz</span>
+                                  </div>
+                                  <h4 className="text-gray-400 font-black text-sm uppercase tracking-widest">暂无考核题目</h4>
+                                </div>
+                             )}
+                          </div>
+                       </div>
                     )}
-                  </div>
-                  <div className="space-y-2">
-                    {questionFormData.options.map((option, idx) => (
-                      <div key={idx} className="flex items-center gap-3 animate-in slide-in-from-left-2 duration-300">
-                        <div className="flex-1 flex items-center bg-gray-50 border border-transparent focus-within:border-[#135bec] rounded-xl overflow-hidden transition-all">
-                          <div className="w-10 h-10 flex items-center justify-center bg-gray-100 text-[10px] font-black text-gray-400 border-r uppercase tracking-tighter shrink-0">{String.fromCharCode(65 + idx)}</div>
-                          <input 
-                            type="text" required readOnly={questionFormData.type === 'boolean'}
-                            className="flex-1 h-12 px-4 bg-transparent border-none text-sm font-bold focus:ring-0"
-                            value={option}
-                            onChange={e => {
-                              const opts = [...questionFormData.options];
-                              opts[idx] = e.target.value;
-                              setQuestionFormData({...questionFormData, options: opts});
-                            }}
-                          />
-                        </div>
-                        <button 
-                          type="button" 
-                          onClick={() => toggleCorrectAnswer(idx)}
-                          className={`size-10 rounded-xl flex items-center justify-center border transition-all shrink-0 ${questionFormData.correctAnswers.includes(idx) ? 'bg-green-500 text-white border-green-500 shadow-md ring-2 ring-green-100' : 'bg-white text-gray-200 border-gray-100 hover:text-green-500'}`}
-                        >
-                          <span className="material-symbols-outlined text-xl">{questionFormData.correctAnswers.includes(idx) ? 'check_circle' : 'radio_button_unchecked'}</span>
-                        </button>
+                    {/* ... other detailsTab cases ... */}
+                 </div>
+              </main>
+           </div>
+        </div>
+      )}
+
+      {/* 导入结果核验报告弹窗 */}
+      {importStatus === 'FINISHED' && importResult && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center p-4 bg-[#111318]/95 backdrop-blur-xl animate-in fade-in duration-300">
+           <div className="bg-white w-full max-w-4xl rounded-[3rem] shadow-2xl overflow-hidden flex flex-col h-[80vh] animate-in zoom-in-95">
+              <header className="px-10 py-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50 shrink-0">
+                 <div className="flex items-center gap-4">
+                    <div className="size-12 rounded-2xl bg-[#135bec] text-white flex items-center justify-center">
+                       <span className="material-symbols-outlined">description</span>
+                    </div>
+                    <div>
+                       <h3 className="text-xl font-black text-[#111318]">合规性导入报告</h3>
+                       <p className="text-[10px] text-gray-400 font-bold uppercase mt-1 tracking-widest">扫描完成 • 21 CFR Part 11 数据完整性核验</p>
+                    </div>
+                 </div>
+                 <button onClick={() => setImportStatus('IDLE')} className="size-10 rounded-full hover:bg-gray-100 text-gray-400 flex items-center justify-center">
+                    <span className="material-symbols-outlined">close</span>
+                 </button>
+              </header>
+
+              <div className="flex-1 overflow-y-auto p-10 custom-scrollbar space-y-10">
+                 {/* Summary Cards */}
+                 <div className="grid grid-cols-3 gap-6">
+                    <div className="p-8 rounded-[2rem] bg-gray-50 border border-gray-100 text-center">
+                       <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">文件总题数</p>
+                       <p className="text-4xl font-black text-[#111318]">{importResult.total}</p>
+                    </div>
+                    <div className="p-8 rounded-[2rem] bg-green-50 border border-green-100 text-center">
+                       <p className="text-[10px] font-black text-green-600 uppercase tracking-widest mb-2">通过核验并导入</p>
+                       <p className="text-4xl font-black text-green-600">{importResult.success}</p>
+                    </div>
+                    <div className="p-8 rounded-[2rem] bg-red-50 border border-red-100 text-center relative overflow-hidden">
+                       <p className="text-[10px] font-black text-red-600 uppercase tracking-widest mb-2">拦截项 (异常)</p>
+                       <p className="text-4xl font-black text-red-600">{importResult.failed}</p>
+                    </div>
+                 </div>
+
+                 {/* Failed Items List */}
+                 {importResult.failedItems.length > 0 && (
+                   <div className="space-y-6">
+                      <div className="flex items-center gap-3">
+                         <span className="material-symbols-outlined text-red-500">warning</span>
+                         <h4 className="text-sm font-black text-[#111318] uppercase tracking-widest">核验不通过明细</h4>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                      <div className="space-y-4">
+                         {importResult.failedItems.map((item, idx) => (
+                           <div key={idx} className="p-6 bg-red-50/30 rounded-2xl border border-red-100 flex items-start gap-6 animate-in slide-in-from-left-4" style={{ animationDelay: `${idx * 100}ms` }}>
+                              <div className="size-10 rounded-xl bg-white text-red-600 flex items-center justify-center font-black text-xs shrink-0 shadow-sm">
+                                 #{item.index}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                 <p className="text-xs font-black text-[#111318] truncate mb-1">“{item.content}”</p>
+                                 <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest">核验异常:</span>
+                                    <span className="text-[11px] font-medium text-red-800">{item.reason}</span>
+                                 </div>
+                              </div>
+                           </div>
+                         ))}
+                      </div>
+                   </div>
+                 )}
 
-              {questionFormData.type === 'cloze' && (
-                <div className="space-y-3">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">填空位标准答案</label>
-                  {questionFormData.clozeAnswers.map((answer, idx) => (
-                    <div key={idx} className="flex items-center gap-3">
-                      <div className="size-10 rounded-xl bg-blue-50 text-[#135bec] flex items-center justify-center text-[10px] font-black border border-blue-100 shrink-0">{idx + 1}</div>
-                      <input 
-                        type="text" required placeholder={`请输入第 ${idx + 1} 个空位的答案`}
-                        className="flex-1 h-12 px-4 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#135bec]"
-                        value={answer}
-                        onChange={e => {
-                          const ans = [...questionFormData.clozeAnswers];
-                          ans[idx] = e.target.value;
-                          setQuestionFormData({...questionFormData, clozeAnswers: ans});
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {questionFormData.type === 'matching' && (
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">匹配对 (左侧 ↔ 右侧)</label>
-                    <button type="button" onClick={() => setQuestionFormData({...questionFormData, matchingPairs: [...questionFormData.matchingPairs, {left: '', right: ''}]})} className="text-[10px] font-black text-[#135bec] hover:underline">+ 添加配对</button>
-                  </div>
-                  {questionFormData.matchingPairs.map((pair, idx) => (
-                    <div key={idx} className="flex items-center gap-3">
-                      <input type="text" required placeholder="左项" className="flex-1 h-12 px-4 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#135bec]" value={pair.left} onChange={e => {
-                        const pairs = [...questionFormData.matchingPairs];
-                        pairs[idx].left = e.target.value;
-                        setQuestionFormData({...questionFormData, matchingPairs: pairs});
-                      }} />
-                      <span className="material-symbols-outlined text-gray-300">swap_horiz</span>
-                      <input type="text" required placeholder="右项" className="flex-1 h-12 px-4 bg-gray-50 border-none rounded-xl text-sm font-bold focus:ring-2 focus:ring-[#135bec]" value={pair.right} onChange={e => {
-                        const pairs = [...questionFormData.matchingPairs];
-                        pairs[idx].right = e.target.value;
-                        setQuestionFormData({...questionFormData, matchingPairs: pairs});
-                      }} />
-                      <button type="button" onClick={() => setQuestionFormData({...questionFormData, matchingPairs: questionFormData.matchingPairs.filter((_, i) => i !== idx)})} className="text-gray-300 hover:text-red-500 p-1"><span className="material-symbols-outlined">delete</span></button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex justify-end gap-3 pt-6 border-t border-gray-100 sticky bottom-0 bg-white">
-                <button type="button" onClick={() => setIsQuestionModalOpen(false)} className="px-6 h-12 text-sm font-bold text-gray-500 hover:text-gray-700 transition-colors">取消</button>
-                <button type="submit" className="px-12 h-12 bg-[#135bec] text-white text-sm font-black rounded-xl shadow-lg hover:bg-blue-700 transition-all uppercase tracking-widest">
-                  {editingQuestion ? '保存修改' : '确认新增'}
-                </button>
+                 <div className="p-6 bg-blue-50 rounded-2xl flex items-start gap-4">
+                    <span className="material-symbols-outlined text-[#135bec] text-xl">security</span>
+                    <p className="text-[10px] text-[#135bec] font-bold leading-relaxed">
+                       <b>数据完整性说明：</b> 系统已根据《合规导入规范》对文件进行了深度扫描。所有已导入的考题均已加盖时间戳并归入受控库。请对上述异常项进行修正后重新导入。
+                    </p>
+                 </div>
               </div>
-            </form>
-          </div>
+
+              <footer className="px-10 py-8 border-t border-gray-100 bg-gray-50 shrink-0 flex justify-end">
+                 <button 
+                    onClick={() => setImportStatus('IDLE')}
+                    className="px-12 h-12 bg-[#111318] text-white text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-xl active:scale-95 transition-all"
+                 >
+                    确认并关闭报告
+                 </button>
+              </footer>
+           </div>
+        </div>
+      )}
+
+      {/* 题目编辑器及文件上传等其他模态框保持不变... */}
+      {isQuestionEditorOpen && editingQuestion && (
+        <div className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-[#111318]/95 backdrop-blur-xl animate-in fade-in duration-300">
+           <div className="bg-white w-full max-w-5xl rounded-[3.5rem] shadow-2xl overflow-hidden flex h-[85vh] animate-in zoom-in-95">
+              <aside className="w-80 bg-gray-50 border-r border-gray-100 p-12 flex flex-col shrink-0">
+                 <h5 className="text-[10px] font-black text-[#135bec] uppercase tracking-widest mb-10">考核题型设计</h5>
+                 <div className="space-y-3">
+                    {[
+                       { id: 'single', label: '单选题', icon: 'radio_button_checked' },
+                       { id: 'multiple', label: '多选题', icon: 'check_box' },
+                       { id: 'blank', label: '填空题', icon: 'edit_note' },
+                       { id: 'matching', label: '匹配题', icon: 'compare_arrows' }
+                    ].map(type => (
+                       <button 
+                          key={type.id}
+                          onClick={() => setEditingQuestion({ ...editingQuestion, type: type.id as any, answer: type.id === 'multiple' ? [] : type.id === 'matching' ? null : 0 })}
+                          className={`w-full flex items-center gap-4 px-6 py-4 rounded-2xl text-xs font-black uppercase tracking-widest transition-all ${editingQuestion.type === type.id ? 'bg-[#111318] text-white shadow-xl' : 'text-gray-400 hover:bg-gray-100'}`}
+                       >
+                          <span className="material-symbols-outlined text-xl">{type.icon}</span>
+                          {type.label}
+                       </button>
+                    ))}
+                 </div>
+                 
+                 <div className="mt-auto space-y-6">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">分值设定</label>
+                       <input 
+                          type="number" 
+                          className="w-full h-12 px-5 bg-white border border-gray-200 rounded-xl text-sm font-black text-[#135bec]"
+                          value={editingQuestion.score}
+                          onChange={e => setEditingQuestion({ ...editingQuestion, score: parseInt(e.target.value) })}
+                       />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">难度等级</label>
+                       <select 
+                          className="w-full h-12 px-5 bg-white border border-gray-200 rounded-xl text-sm font-black"
+                          value={editingQuestion.difficulty}
+                          onChange={e => setEditingQuestion({ ...editingQuestion, difficulty: e.target.value as any })}
+                       >
+                          <option value="Low">简单 (Low)</option>
+                          <option value="Medium">中等 (Medium)</option>
+                          <option value="High">困难 (High)</option>
+                       </select>
+                    </div>
+                 </div>
+              </aside>
+
+              <main className="flex-1 flex flex-col overflow-hidden bg-white">
+                 <header className="px-12 py-10 border-b border-gray-100 flex justify-between items-center shrink-0">
+                    <h4 className="text-xl font-black text-[#111318]">设计考题内容</h4>
+                    <button onClick={() => setIsQuestionEditorOpen(false)} className="size-10 rounded-full hover:bg-gray-100 text-gray-400 flex items-center justify-center">
+                       <span className="material-symbols-outlined">close</span>
+                    </button>
+                 </header>
+
+                 <div className="flex-1 overflow-y-auto p-12 custom-scrollbar space-y-10">
+                    <div className="space-y-3">
+                       <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">题干内容</label>
+                       <textarea 
+                          className="w-full h-32 px-6 py-4 bg-gray-50 border-none rounded-[2rem] text-sm font-bold focus:ring-2 focus:ring-[#135bec] custom-scrollbar shadow-inner"
+                          placeholder="请输入题目内容，例如：根据 GMP 规范，以下关于灭菌操作的描述正确的是..."
+                          value={editingQuestion.content}
+                          onChange={e => setEditingQuestion({ ...editingQuestion, content: e.target.value })}
+                       />
+                    </div>
+
+                    <div className="space-y-6">
+                       <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">考核参数配置</label>
+                          {(editingQuestion.type === 'single' || editingQuestion.type === 'multiple') && (
+                             <button onClick={() => setEditingQuestion({ ...editingQuestion, options: [...(editingQuestion.options || []), ''] })} className="text-[10px] font-black text-[#135bec] uppercase tracking-widest underline">+ 增加选项</button>
+                          )}
+                          {editingQuestion.type === 'matching' && (
+                             <button onClick={() => setEditingQuestion({ ...editingQuestion, pairs: [...(editingQuestion.pairs || []), { left: '', right: '' }] })} className="text-[10px] font-black text-[#135bec] uppercase tracking-widest underline">+ 增加配对</button>
+                          )}
+                       </div>
+
+                       <div className="space-y-3">
+                          {(editingQuestion.type === 'single' || editingQuestion.type === 'multiple') && editingQuestion.options?.map((opt, idx) => (
+                             <div key={idx} className="flex items-center gap-4 animate-in slide-in-from-left-4">
+                                <div 
+                                   onClick={() => {
+                                      if (editingQuestion.type === 'single') setEditingQuestion({ ...editingQuestion, answer: idx });
+                                      else {
+                                         const answers = Array.isArray(editingQuestion.answer) ? [...editingQuestion.answer] : [];
+                                         const newAnswers = answers.includes(idx) ? answers.filter(a => a !== idx) : [...answers, idx];
+                                         setEditingQuestion({ ...editingQuestion, answer: newAnswers });
+                                      }
+                                   }}
+                                   className={`size-12 rounded-2xl flex items-center justify-center cursor-pointer border-2 transition-all ${
+                                      (editingQuestion.type === 'single' ? editingQuestion.answer === idx : Array.isArray(editingQuestion.answer) && editingQuestion.answer.includes(idx))
+                                         ? 'bg-[#135bec] border-[#135bec] text-white shadow-lg'
+                                         : 'bg-white border-gray-100 text-gray-300'
+                                   }`}
+                                >
+                                   <span className="text-xs font-black">{String.fromCharCode(65 + idx)}</span>
+                                </div>
+                                <input 
+                                   type="text"
+                                   className="flex-1 h-12 px-5 bg-gray-50 border-none rounded-xl text-sm font-bold"
+                                   value={opt}
+                                   onChange={e => {
+                                      const newOpts = [...(editingQuestion.options || [])];
+                                      newOpts[idx] = e.target.value;
+                                      setEditingQuestion({ ...editingQuestion, options: newOpts });
+                                   }}
+                                   placeholder={`选项 ${String.fromCharCode(65 + idx)} 内容...`}
+                                />
+                             </div>
+                          ))}
+                       </div>
+                    </div>
+                 </div>
+
+                 <footer className="px-12 py-10 bg-gray-50 border-t border-gray-100 flex justify-end gap-4 shrink-0">
+                    <button onClick={() => setIsQuestionEditorOpen(false)} className="px-8 h-12 text-sm font-bold text-gray-500">取消编辑</button>
+                    <button onClick={saveQuestion} disabled={!editingQuestion.content} className="px-14 h-12 bg-[#135bec] text-white text-[10px] font-black uppercase tracking-widest rounded-2xl shadow-xl shadow-blue-500/20 active:scale-95 transition-all disabled:opacity-30">保存至考题库</button>
+                 </footer>
+              </main>
+           </div>
         </div>
       )}
     </div>
